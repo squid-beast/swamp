@@ -1,0 +1,177 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Webhook Manager — ChatGPT-inspired neutral theme.
+   True-neutral grays (no hue) at ChatGPT's lightness values. Primary is
+   near-white on dark / near-black on light. Status + chart colors stay, since
+   they carry meaning. HSL triplets so shadcn `hsl(var(--token))` resolves.
+   ───────────────────────────────────────────────────────────────────────── */
+
+@layer base {
+  :root {
+    /* ── light: white canvas, soft gray sidebar (like ChatGPT light) ── */
+    --background: 0 0% 100%;
+    --foreground: 0 0% 9%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 9%;
+
+    /* neutral primary = near-black button (ChatGPT's dark send button) */
+    --primary: 0 0% 9%;
+    --primary-foreground: 0 0% 98%;
+    --brand: 0 0% 9%;
+    --brand-foreground: 0 0% 98%;
+
+    --secondary: 0 0% 94%;
+    --secondary-foreground: 0 0% 12%;
+    --muted: 0 0% 96%;
+    --muted-foreground: 0 0% 40%;
+    --accent: 0 0% 93%;
+    --accent-foreground: 0 0% 12%;
+
+    --destructive: 0 72% 48%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 158 64% 34%;
+
+    --border: 0 0% 89%;
+    --input: 0 0% 85%;
+    --ring: 0 0% 45%;
+    --radius: 0.75rem;
+
+    /* chart palette (categorical — kept for readability) */
+    --chart-1: 39 90% 50%;
+    --chart-2: 172 66% 38%;
+    --chart-3: 205 82% 50%;
+    --chart-4: 342 74% 56%;
+    --chart-5: 255 58% 60%;
+
+    /* sidebar rail — ChatGPT's #f9f9f9 */
+    --sidebar-background: 0 0% 97.5%;
+    --sidebar-foreground: 0 0% 25%;
+    --sidebar-primary: 0 0% 9%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 0 0% 92%;
+    --sidebar-accent-foreground: 0 0% 10%;
+    --sidebar-border: 0 0% 90%;
+    --sidebar-ring: 0 0% 45%;
+
+    /* ── categorical status palette (select / status / kanban) — light ── */
+    --c-amber-bg: #fbecc9;   --c-amber-fg: #8a5600;
+    --c-violet-bg: #ebe6fb;  --c-violet-fg: #5a3ec2;
+    --c-teal-bg: #d3f2ec;    --c-teal-fg: #0c7268;
+    --c-rose-bg: #fbdfe8;    --c-rose-fg: #b23561;
+    --c-sky-bg: #dbebfb;     --c-sky-fg: #1a6aa8;
+    --c-lime-bg: #e9f3d0;    --c-lime-fg: #556d16;
+    --c-orange-bg: #fbe4d1;  --c-orange-fg: #a4501c;
+    --c-fuchsia-bg: #f6dcf6; --c-fuchsia-fg: #973a9c;
+  }
+
+  .dark {
+    /* ── dark: ChatGPT #212121 canvas, #171717 sidebar ── */
+    --background: 0 0% 13%;
+    --foreground: 0 0% 93%;
+    --card: 0 0% 17%;
+    --card-foreground: 0 0% 93%;
+    --popover: 0 0% 18%;
+    --popover-foreground: 0 0% 93%;
+
+    /* neutral primary = near-white button (ChatGPT's light send button) */
+    --primary: 0 0% 96%;
+    --primary-foreground: 0 0% 12%;
+    --brand: 0 0% 96%;
+    --brand-foreground: 0 0% 12%;
+
+    --secondary: 0 0% 18%;
+    --secondary-foreground: 0 0% 92%;
+    --muted: 0 0% 17%;
+    --muted-foreground: 0 0% 64%;
+    --accent: 0 0% 20%;
+    --accent-foreground: 0 0% 95%;
+
+    --destructive: 0 62% 52%;
+    --destructive-foreground: 0 0% 98%;
+    --success: 158 58% 52%;
+
+    --border: 0 0% 24%;
+    --input: 0 0% 26%;
+    --ring: 0 0% 64%;
+
+    --chart-1: 39 90% 58%;
+    --chart-2: 172 60% 50%;
+    --chart-3: 205 82% 62%;
+    --chart-4: 342 76% 68%;
+    --chart-5: 255 66% 72%;
+
+    --sidebar-background: 0 0% 9%;
+    --sidebar-foreground: 0 0% 80%;
+    --sidebar-primary: 0 0% 96%;
+    --sidebar-primary-foreground: 0 0% 12%;
+    --sidebar-accent: 0 0% 18%;
+    --sidebar-accent-foreground: 0 0% 96%;
+    --sidebar-border: 0 0% 16%;
+    --sidebar-ring: 0 0% 64%;
+
+    /* ── categorical status palette — dark ── */
+    --c-amber-bg: #3a2c10;   --c-amber-fg: #f2b544;
+    --c-violet-bg: #2a2140;  --c-violet-fg: #b9a3f5;
+    --c-teal-bg: #10322f;    --c-teal-fg: #5fd4c4;
+    --c-rose-bg: #3c1a26;    --c-rose-fg: #f08cab;
+    --c-sky-bg: #122a3d;     --c-sky-fg: #7cc1f0;
+    --c-lime-bg: #24310f;    --c-lime-fg: #b8d95c;
+    --c-orange-bg: #3b2311;  --c-orange-fg: #f0a05c;
+    --c-fuchsia-bg: #35163a; --c-fuchsia-fg: #e08cf0;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "cv01", "ss01";
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+}
+
+/* ── typography helpers ── */
+.font-display {
+  font-family: var(--font-display), "Segoe UI", system-ui, sans-serif;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+.font-mono-data {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-feature-settings: "tnum";
+}
+
+/* ── selection + scrollbar, neutral ── */
+::selection {
+  background: hsl(var(--foreground) / 0.15);
+}
+* {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--border)) transparent;
+}
+*::-webkit-scrollbar {
+  height: 9px;
+  width: 9px;
+}
+*::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+  border-radius: 6px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.5);
+}
+
+/* ── entrance animation ── */
+@keyframes rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.rise { animation: rise 0.35s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
