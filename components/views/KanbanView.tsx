@@ -112,17 +112,21 @@ export function KanbanView({
                   )}
                 >
                   {titleField && (
-                    <div className="mb-1.5 text-[13.5px] font-semibold">
+                    <div className="mb-1.5 break-words text-[13.5px] font-semibold">
                       {String(r[titleField.id] ?? "Untitled")}
                     </div>
                   )}
                   <div className="flex flex-col gap-1">
                     {cardFields.map((f) => (
-                      <div key={f.id} className="flex items-baseline gap-2 text-[12px]">
-                        <span className="w-24 shrink-0 truncate text-[10.5px] uppercase tracking-wider text-muted-foreground">
+                      <div key={f.id} className="flex items-start gap-2 text-[12px]">
+                        <span className="w-24 shrink-0 truncate pt-px text-[10.5px] uppercase tracking-wider text-muted-foreground">
                           {f.displayName}
                         </span>
-                        <Cell field={f} value={r[f.id]} />
+                        {/* min-w-0 lets the value shrink and wrap inside the card
+                            instead of overflowing past its right edge. */}
+                        <div className="min-w-0 flex-1">
+                          <Cell field={f} value={r[f.id]} wrap />
+                        </div>
                       </div>
                     ))}
                   </div>
