@@ -41,7 +41,7 @@ class FileStore implements StorageAdapter {
           rowCount: ds.rowCount,
           fieldCount: ds.fields.length,
           updatedAt: ds.updatedAt,
-          recommendedViews: ds.views.map((v) => v.type),
+          recommendedViews: [...new Set(ds.views.map((v) => v.type))],
         };
       })
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
@@ -165,7 +165,7 @@ class SupabaseStore implements StorageAdapter {
       fieldCount: Array.isArray(d.fields) ? d.fields.length : 0,
       updatedAt: d.updated_at as string,
       recommendedViews: Array.isArray(d.views)
-        ? (d.views as ViewConfig[]).map((v) => v.type)
+        ? [...new Set((d.views as ViewConfig[]).map((v) => v.type))]
         : [],
     }));
   }

@@ -41,10 +41,12 @@ export function Workspace({ dataset, rows }: { dataset: Dataset; rows: Row[] }) 
   const isSheet = ds.source.kind === "sheet";
 
   useEffect(() => setData(rows), [rows]);
-  // A server-driven refresh (rename, re-import, sync) streams fresh props into this
-  // still-mounted client component; reconcile local dataset state so the title,
-  // views, and overrides never go stale (mirrors the rows effect above).
-  useEffect(() => setDs(dataset), [dataset]);
+  // Keep the on-page title in sync when the dataset is renamed elsewhere (the
+  // sidebar rename triggers a server refresh that streams a fresh prop in). Scoped
+  // to `name` so it never clobbers optimistic field/view edits made here.
+  useEffect(() => {
+    setDs((prev) => (prev.name === dataset.name ? prev : { ...prev, name: dataset.name }));
+  }, [dataset.name]);
 
   // Live updates: new responses land in dataset_rows and are appended in place.
   useEffect(() => {
@@ -96,12 +98,20 @@ export function Workspace({ dataset, rows }: { dataset: Dataset; rows: Row[] }) 
   );
   const [search, setSearch] = useState("");
 
-  // Deep-link support: command palette navigates with ?view=…
+  // Deep-link support: command palette navigates with ?view=… Re-run only when the
+  // query itself changes (not on board add/remove) so it can't yank the user off a
+  // board they just switched to, and normalize ?view=<type> → the resolved <id>.
   useEffect(() => {
     const m = matchView(viewFromQuery);
-    if (m) setActiveId(m.id);
+    if (!m) return;
+    setActiveId(m.id);
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("view") !== m.id) {
+      url.searchParams.set("view", m.id);
+      window.history.replaceState(null, "", url.toString());
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewFromQuery, ds.views]);
+  }, [viewFromQuery]);
 
   const view = ds.views.find((v) => v.id === activeId) ?? ds.views[0];
 
@@ -180,8 +190,11 @@ export function Workspace({ dataset, rows }: { dataset: Dataset; rows: Row[] }) 
     () =>
       fields.filter((f) => {
         if (f.hidden || f.type === "json" || f.type === "image") return false;
-        if (f.type === "status" || f.type === "singleSelect" || f.type === "boolean") return true;
         const distinct = new Set(data.map((r) => String(r[f.id] ?? ""))).size;
+        // Categorical fields can drive lanes; still cap distinct so a mis-typed
+        // high-cardinality column can't spawn hundreds of columns.
+        if (f.type === "status" || f.type === "singleSelect" || f.type === "boolean")
+          return distinct >= 1 && distinct <= 30;
         return distinct >= 2 && distinct <= 20 && distinct < data.length;
       }),
     [fields, data]
