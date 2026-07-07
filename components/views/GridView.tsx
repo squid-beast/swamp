@@ -175,7 +175,7 @@ export function GridView({
             onChange={(v) => onUpdateCell([row.id], f.id, v)}
           />
         ) : (
-          <Cell field={f} value={getValue()} />
+          <Cell field={f} value={getValue()} wrap />
         ),
     }));
 
@@ -426,7 +426,7 @@ export function GridView({
                     key={cell.id}
                     className={cn(
                       "h-11 border-b border-border/60 px-3 align-middle first:pl-4",
-                      i === 0 ? "w-12" : "max-w-[360px]"
+                      i === 0 ? "w-12" : "max-w-[420px]"
                     )}
                   >
                     {flexRender(cell.column.columnDef.cell, cell.getContext())}

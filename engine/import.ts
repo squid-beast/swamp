@@ -22,11 +22,37 @@ export function parseCSV(text: string): ParsedTable {
 }
 
 export function parseXLSX(buf: ArrayBuffer): ParsedTable {
-  const wb = XLSX.read(buf, { type: "array" });
+  // cellDates → date-formatted cells become JS Date objects instead of raw
+  // serials (e.g. 46142), so a "Date" column doesn't get typed as a number.
+  const wb = XLSX.read(buf, { type: "array", cellDates: true });
   const ws = wb.Sheets[wb.SheetNames[0]];
-  const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: "" });
+  const raw = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: "" });
+  // Normalize Date objects to date-only / ISO-like strings so inference detects
+  // "date" and JSON storage round-trips cleanly. Uses the date's own calendar
+  // fields (SheetJS aligns them to the sheet's date) — no timezone off-by-one.
+  const rows = raw.map((r) => {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(r)) out[k] = v instanceof Date ? excelDateToString(v) : v;
+    return out;
+  });
   const columns = rows.length ? Object.keys(rows[0]) : [];
   return { columns, rows };
+}
+
+const pad2 = (n: number) => String(n).padStart(2, "0");
+const ymd = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+
+// A spreadsheet Date → "YYYY-MM-DD" (or "YYYY-MM-DDThh:mm:ss" when it carries a
+// real time). SheetJS can reconstruct a whole-day serial a hair off midnight
+// (e.g. ...T23:59:59 in half-hour-offset zones like IST), so snap values within
+// 2s of a day boundary to the day — otherwise a date-only cell can show a day early.
+function excelDateToString(d: Date): string {
+  const sinceMidnight = d.getTime() - new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const dayMs = 86_400_000;
+  if (sinceMidnight <= 2000 || sinceMidnight >= dayMs - 2000) {
+    return ymd(new Date(d.getTime() + (sinceMidnight >= dayMs - 2000 ? 2000 : 0)));
+  }
+  return `${ymd(d)}T${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
 }
 
 // Accepts: array of objects, {data:[...]}, {rows:[...]}, {records:[...]}, single object, nested webhook payloads.

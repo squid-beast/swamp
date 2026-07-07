@@ -51,16 +51,17 @@ export function ProfileForm({ userId, initial }: { userId: string; initial: Init
   async function onSubmit(values: z.infer<typeof schema>) {
     setLoading(true);
     const supabase = createClient();
-    const { error } = await supabase
-      .from("profiles")
-      .update({
-        first_name: values.firstName,
-        last_name: values.lastName,
-        dob: values.dob || null,
-        avatar_url: values.avatarUrl || null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", userId);
+    // upsert (not update): users created before the profiles trigger existed have
+    // no row yet, and .update() would match 0 rows and silently "succeed".
+    const { error } = await supabase.from("profiles").upsert({
+      id: userId,
+      email: initial.email || null,
+      first_name: values.firstName,
+      last_name: values.lastName,
+      dob: values.dob || null,
+      avatar_url: values.avatarUrl || null,
+      updated_at: new Date().toISOString(),
+    });
     setLoading(false);
     if (error) return toast.error(error.message);
     toast.success("Profile saved");

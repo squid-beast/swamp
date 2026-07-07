@@ -32,7 +32,15 @@ const toNum = (v: unknown) => {
   return isNaN(n) ? null : n;
 };
 
-export function Cell({ field, value }: { field: FieldMeta; value: unknown }) {
+// Parse a date value without the UTC off-by-one: a bare YYYY-MM-DD is read as a
+// local date, not UTC midnight (which would render as the previous day west of UTC).
+const parseDateValue = (v: string): Date | null => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v.trim());
+  const d = m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date(v);
+  return isNaN(d.getTime()) ? null : d;
+};
+
+export function Cell({ field, value, wrap = false }: { field: FieldMeta; value: unknown; wrap?: boolean }) {
   if (value === null || value === undefined || String(value).trim() === "")
     return <span className="text-muted-foreground/60">—</span>;
   const s = String(value);
@@ -71,10 +79,10 @@ export function Cell({ field, value }: { field: FieldMeta; value: unknown }) {
     case "percent":
       return <span className="font-mono-data text-[13px] tabular-nums">{s.endsWith("%") ? s : `${s}%`}</span>;
     case "date": {
-      const d = new Date(s);
+      const d = parseDateValue(s);
       return (
         <span className="font-mono-data text-[13px] text-muted-foreground">
-          {isNaN(d.getTime()) ? s : d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+          {d ? d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : s}
         </span>
       );
     }
@@ -133,6 +141,15 @@ export function Cell({ field, value }: { field: FieldMeta; value: unknown }) {
     case "longText":
       return <span className="text-muted-foreground line-clamp-2 max-w-[320px]">{s}</span>;
     default:
-      return <span className="whitespace-nowrap">{s}</span>;
+      // In the grid, wrap-and-clamp long values (e.g. descriptions) so they stay
+      // inside their cell instead of overflowing into the next column (full text
+      // on hover). Other views (gallery/kanban) keep the original single line.
+      return wrap ? (
+        <span title={s} className="line-clamp-2 max-w-[420px] whitespace-normal break-words">
+          {s}
+        </span>
+      ) : (
+        <span className="whitespace-nowrap">{s}</span>
+      );
   }
 }
