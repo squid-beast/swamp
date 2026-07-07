@@ -15,6 +15,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const denied = await requireAuth();
   if (denied) return denied;
   const body = await req.json();
+  if (typeof body.name === "string" && body.name.trim())
+    await store.rename(params.id, body.name.trim());
   if (body.overrides) await store.saveOverrides(params.id, body.overrides);
   if (body.views) await store.saveViews(params.id, body.views);
   return NextResponse.json({ ok: true });

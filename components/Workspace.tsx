@@ -2,19 +2,26 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { Dataset, FieldOverride, Row, RowPatch, ViewType, resolveFields } from "@/core/types";
+import { Dataset, FieldOverride, Row, RowPatch, ViewType, ViewConfig, resolveFields } from "@/core/types";
 import { GridView } from "./views/GridView";
 import { KanbanView } from "./views/KanbanView";
 import { GalleryView } from "./views/GalleryView";
 import { DashboardView } from "./views/DashboardView";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
-import { Search, Table2, Kanban, Images, Gauge, SlidersHorizontal, Eye, EyeOff, RefreshCw } from "lucide-react";
+import { Search, Table2, Kanban, Images, Gauge, SlidersHorizontal, Eye, EyeOff, RefreshCw, Plus, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
   Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger,
 } from "@/components/ui/sheet";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 const VIEW_ICON: Record<ViewType, React.ReactNode> = {
@@ -34,6 +41,10 @@ export function Workspace({ dataset, rows }: { dataset: Dataset; rows: Row[] }) 
   const isSheet = ds.source.kind === "sheet";
 
   useEffect(() => setData(rows), [rows]);
+  // A server-driven refresh (rename, re-import, sync) streams fresh props into this
+  // still-mounted client component; reconcile local dataset state so the title,
+  // views, and overrides never go stale (mirrors the rows effect above).
+  useEffect(() => setDs(dataset), [dataset]);
 
   // Live updates: new responses land in dataset_rows and are appended in place.
   useEffect(() => {
@@ -75,20 +86,24 @@ export function Workspace({ dataset, rows }: { dataset: Dataset; rows: Row[] }) 
     }
   };
 
-  const viewFromQuery = searchParams.get("view") as ViewType | null;
-  const initialType =
-    (viewFromQuery && ds.views.find((v) => v.type === viewFromQuery)?.type) ?? ds.views[0]?.type;
-  const [activeType, setActiveType] = useState<ViewType>(initialType);
+  // Views are tracked by id (a dataset can hold several boards). Back-compat with
+  // old ?view=<type> deep-links from the command palette.
+  const viewFromQuery = searchParams.get("view");
+  const matchView = (q: string | null) =>
+    q ? (ds.views.find((v) => v.id === q) ?? ds.views.find((v) => v.type === q)) : undefined;
+  const [activeId, setActiveId] = useState<string | undefined>(
+    (matchView(viewFromQuery) ?? ds.views[0])?.id
+  );
   const [search, setSearch] = useState("");
 
   // Deep-link support: command palette navigates with ?view=…
   useEffect(() => {
-    if (viewFromQuery && ds.views.some((v) => v.type === viewFromQuery)) {
-      setActiveType(viewFromQuery);
-    }
+    const m = matchView(viewFromQuery);
+    if (m) setActiveId(m.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewFromQuery, ds.views]);
 
-  const view = ds.views.find((v) => v.type === activeType) ?? ds.views[0];
+  const view = ds.views.find((v) => v.id === activeId) ?? ds.views[0];
 
   const persistOverrides = async (overrides: Record<string, FieldOverride>) => {
     setDs((d) => ({ ...d, overrides }));
@@ -152,11 +167,59 @@ export function Workspace({ dataset, rows }: { dataset: Dataset; rows: Row[] }) 
     toast.success(rowIds.length === 1 ? "Row deleted" : `${rowIds.length} rows deleted`);
   };
 
-  const changeView = (t: string) => {
-    setActiveType(t as ViewType);
+  const changeView = (id: string) => {
+    if (!id) return;
+    setActiveId(id);
     const url = new URL(window.location.href);
-    url.searchParams.set("view", t);
+    url.searchParams.set("view", id);
     window.history.replaceState(null, "", url.toString());
+  };
+
+  // ── Boards: add a kanban grouped by any low-cardinality column, or remove one. ──
+  const boardFields = useMemo(
+    () =>
+      fields.filter((f) => {
+        if (f.hidden || f.type === "json" || f.type === "image") return false;
+        if (f.type === "status" || f.type === "singleSelect" || f.type === "boolean") return true;
+        const distinct = new Set(data.map((r) => String(r[f.id] ?? ""))).size;
+        return distinct >= 2 && distinct <= 20 && distinct < data.length;
+      }),
+    [fields, data]
+  );
+
+  const persistViews = async (views: ViewConfig[]) => {
+    setDs((d) => ({ ...d, views }));
+    await fetch(`/api/datasets/${ds.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ views }),
+    });
+  };
+
+  const addBoard = (fieldId: string) => {
+    const field = fields.find((f) => f.id === fieldId);
+    if (!field) return;
+    const existing = ds.views.find((v) => v.type === "kanban" && v.groupBy === fieldId);
+    if (existing) return changeView(existing.id);
+    const titleField =
+      fields.find((f) => /name|title|subject/i.test(f.sourceName) && f.type === "text") ??
+      fields.find((f) => f.type === "text" && f.id !== fieldId);
+    const newView: ViewConfig = {
+      id: `v_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
+      type: "kanban",
+      name: field.displayName,
+      groupBy: field.id,
+      titleField: titleField?.id,
+    };
+    const next = [...ds.views, newView];
+    persistViews(next);
+    changeView(newView.id);
+  };
+
+  const removeView = (viewId: string) => {
+    const next = ds.views.filter((v) => v.id !== viewId);
+    persistViews(next);
+    if (activeId === viewId) changeView(next[0]?.id ?? "");
   };
 
   return (
@@ -165,21 +228,46 @@ export function Workspace({ dataset, rows }: { dataset: Dataset; rows: Row[] }) 
         {ds.name}
       </h1>
 
-      <Tabs value={activeType} onValueChange={changeView}>
+      <Tabs value={view?.id} onValueChange={changeView}>
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="max-w-full overflow-x-auto pb-0.5">
-            <TabsList>
-              {ds.views.map((v) => (
-                <TabsTrigger key={v.id} value={v.type} className="gap-1.5">
-                  {VIEW_ICON[v.type]}
-                  {v.name}
-                </TabsTrigger>
-              ))}
-            </TabsList>
+          <div className="flex min-w-0 items-center gap-1.5">
+            <div className="max-w-full overflow-x-auto pb-0.5">
+              <TabsList>
+                {ds.views.map((v) => (
+                  <TabsTrigger key={v.id} value={v.id} className="gap-1.5">
+                    {VIEW_ICON[v.type]}
+                    {v.name}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </div>
+            {boardFields.length > 0 && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 shrink-0 gap-1.5 text-muted-foreground"
+                  >
+                    <Plus className="size-3.5" />
+                    Board
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-56">
+                  <DropdownMenuLabel>Group cards by…</DropdownMenuLabel>
+                  {boardFields.map((f) => (
+                    <DropdownMenuItem key={f.id} className="gap-2" onSelect={() => addBoard(f.id)}>
+                      <Kanban className="size-3.5 text-muted-foreground" />
+                      <span className="truncate">{f.displayName}</span>
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
           </div>
 
           <div className="flex items-center gap-2">
-            {activeType === "grid" && (
+            {view?.type === "grid" && (
               <div className="relative">
                 <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
                 <Input
@@ -189,6 +277,18 @@ export function Workspace({ dataset, rows }: { dataset: Dataset; rows: Row[] }) 
                   className="h-8 w-40 pl-8 sm:w-48"
                 />
               </div>
+            )}
+
+            {view?.type === "kanban" && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 gap-1.5 text-muted-foreground"
+                onClick={() => view && removeView(view.id)}
+              >
+                <X className="size-3.5" />
+                Remove board
+              </Button>
             )}
 
             {isSheet && (

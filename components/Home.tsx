@@ -55,8 +55,11 @@ export function Home({ initial }: { initial: DatasetSummary[] }) {
         return;
       }
       toast.success("Dataset imported");
-      router.refresh();
+      // Navigate first, then refresh so the shared (app) layout — which renders the
+      // sidebar + overview dataset list — refetches and shows the new dataset without
+      // a manual reload.
       router.push(`/d/${json.id}`);
+      router.refresh();
     },
     [router]
   );
@@ -168,7 +171,7 @@ export function Home({ initial }: { initial: DatasetSummary[] }) {
               <ConfirmDialog
                 title={`Delete “${d.name}”?`}
                 description="This permanently removes the dataset and all of its rows."
-                confirmLabel="Delete dataset"
+                confirmLabel="Delete"
                 onConfirm={() => remove(d.id, d.name)}
                 trigger={
                   <Button

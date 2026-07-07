@@ -15,6 +15,7 @@ export interface StorageAdapter {
   saveViews(id: string, views: ViewConfig[]): Promise<void>;
   updateRows(id: string, patches: RowPatch[]): Promise<void>;
   deleteRows(id: string, rowIds: string[]): Promise<number>; // returns new rowCount
+  rename(id: string, name: string): Promise<void>;
   remove(id: string): Promise<void>;
 }
 
@@ -105,6 +106,14 @@ class FileStore implements StorageAdapter {
     ds.updatedAt = new Date().toISOString();
     fs.writeFileSync(this.dsPath(id), JSON.stringify(ds));
     return rows.length;
+  }
+
+  async rename(id: string, name: string): Promise<void> {
+    const ds = await this.get(id);
+    if (!ds) throw new Error("not found");
+    ds.name = name;
+    ds.updatedAt = new Date().toISOString();
+    fs.writeFileSync(this.dsPath(id), JSON.stringify(ds));
   }
 
   async remove(id: string): Promise<void> {
@@ -280,6 +289,14 @@ class SupabaseStore implements StorageAdapter {
       .update({ row_count: rowCount, updated_at: new Date().toISOString() })
       .eq("id", id);
     return rowCount;
+  }
+
+  async rename(id: string, name: string): Promise<void> {
+    const { error } = await this.db()
+      .from("datasets")
+      .update({ name, updated_at: new Date().toISOString() })
+      .eq("id", id);
+    if (error) throw error;
   }
 
   async remove(id: string): Promise<void> {

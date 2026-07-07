@@ -2,13 +2,14 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import {
   Plus,
   Search,
   LayoutGrid,
   MoreHorizontal,
+  Pencil,
   Trash2,
   ArrowUpRight,
   Webhook,
@@ -44,6 +45,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { RenameDialog } from "@/components/rename-dialog";
 import { createClient } from "@/lib/supabase/client";
 import type { ShellUser } from "./app-shell";
 
@@ -66,9 +68,12 @@ export function AppSidebar({
 }) {
   const pathname = usePathname();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const onOverview = pathname === "/app" && searchParams.get("import") !== "1";
   // Dropdown → AlertDialog: hold the pending dataset so the confirm lives
   // outside the (closing) dropdown menu.
   const [toDelete, setToDelete] = React.useState<DatasetSummary | null>(null);
+  const [toRename, setToRename] = React.useState<DatasetSummary | null>(null);
   const [signOutOpen, setSignOutOpen] = React.useState(false);
 
   const signOut = async () => {
@@ -85,6 +90,16 @@ export function AppSidebar({
     await fetch(`/api/datasets/${id}`, { method: "DELETE" });
     toast.success(`Deleted “${name}”`);
     if (pathname === `/d/${id}`) router.push("/app");
+    router.refresh();
+  };
+
+  const rename = async (id: string, name: string) => {
+    await fetch(`/api/datasets/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    toast.success("Dataset renamed");
     router.refresh();
   };
 
@@ -108,14 +123,10 @@ export function AppSidebar({
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
-                <SidebarMenuButton
-                  asChild
-                  tooltip="Import data"
-                  className="bg-sidebar-accent font-medium text-sidebar-accent-foreground hover:bg-sidebar-accent/80"
-                >
-                  <Link href="/app?import=1">
-                    <Plus />
-                    <span>Import data</span>
+                <SidebarMenuButton asChild isActive={onOverview} tooltip="Overview">
+                  <Link href="/app">
+                    <LayoutGrid />
+                    <span>Overview</span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
@@ -126,10 +137,10 @@ export function AppSidebar({
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
-                <SidebarMenuButton asChild isActive={pathname === "/app"} tooltip="Overview">
-                  <Link href="/app">
-                    <LayoutGrid />
-                    <span>Overview</span>
+                <SidebarMenuButton asChild tooltip="Import data">
+                  <Link href="/app?import=1">
+                    <Plus />
+                    <span>Import data</span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
@@ -166,6 +177,10 @@ export function AppSidebar({
                             <ArrowUpRight className="text-muted-foreground" />
                             Open dataset
                           </Link>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => setToRename(d)}>
+                          <Pencil className="text-muted-foreground" />
+                          Rename
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem
@@ -240,10 +255,19 @@ export function AppSidebar({
         onOpenChange={(o) => !o && setToDelete(null)}
         title={toDelete ? `Delete “${toDelete.name}”?` : ""}
         description="This permanently removes the dataset and all of its rows."
-        confirmLabel="Delete dataset"
+        confirmLabel="Delete"
         onConfirm={() => {
           if (toDelete) remove(toDelete.id, toDelete.name);
           setToDelete(null);
+        }}
+      />
+
+      <RenameDialog
+        open={toRename !== null}
+        onOpenChange={(o) => !o && setToRename(null)}
+        initialName={toRename?.name ?? ""}
+        onSave={(name) => {
+          if (toRename) rename(toRename.id, name);
         }}
       />
 
