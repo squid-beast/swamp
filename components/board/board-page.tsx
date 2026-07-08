@@ -44,11 +44,17 @@ export function BoardPage({ datasets }: { datasets: DatasetSummary[] }) {
   const fields = React.useMemo(() => (ds ? resolveFields(ds) : []), [ds]);
   const groupOptions = React.useMemo(() => groupableFields(fields, rows), [fields, rows]);
 
+  // Guard against out-of-order responses: only the most recently requested
+  // dataset may write state, so a slow earlier fetch can't clobber a newer one.
+  const latestId = React.useRef(datasetId);
+
   const load = React.useCallback(async (id: string) => {
+    latestId.current = id;
     if (!id) return;
     setLoading(true);
     const res = await fetch(`/api/datasets/${id}`);
     const json = await res.json().catch(() => null);
+    if (id !== latestId.current) return; // a newer dataset was selected — drop this
     setLoading(false);
     if (!res.ok || !json?.dataset) {
       toast.error(json?.error ?? "Could not load dataset");
@@ -62,29 +68,32 @@ export function BoardPage({ datasets }: { datasets: DatasetSummary[] }) {
     if (datasetId) load(datasetId);
   }, [datasetId, load]);
 
-  // Pick a sensible default column to group by whenever the options change.
-  React.useEffect(() => {
-    if (!groupOptions.length) {
-      setGroupBy("");
-      return;
-    }
-    if (!groupOptions.some((f) => f.id === groupBy)) {
-      const pref =
-        groupOptions.find((f) => f.type === "status" || f.type === "singleSelect") ??
-        groupOptions[0];
-      setGroupBy(pref.id);
-    }
+  // Effective group column: the user's choice if still valid for this dataset,
+  // else a sensible default — computed during render so the board never renders
+  // with the previous dataset's group field for a frame when switching.
+  const effectiveGroupBy = React.useMemo(() => {
+    if (groupOptions.some((f) => f.id === groupBy)) return groupBy;
+    const pref =
+      groupOptions.find((f) => f.type === "status" || f.type === "singleSelect") ??
+      groupOptions[0];
+    return pref?.id ?? "";
   }, [groupOptions, groupBy]);
 
   const titleField = React.useMemo(
     () =>
       fields.find((f) => /name|title|subject/i.test(f.sourceName) && f.type === "text") ??
-      fields.find((f) => f.type === "text" && f.id !== groupBy),
-    [fields, groupBy]
+      fields.find((f) => f.type === "text" && f.id !== effectiveGroupBy),
+    [fields, effectiveGroupBy]
   );
 
-  const view: ViewConfig | null = groupBy
-    ? { id: "board", type: "kanban", name: "Board", groupBy, titleField: titleField?.id }
+  const view: ViewConfig | null = effectiveGroupBy
+    ? {
+        id: "board",
+        type: "kanban",
+        name: "Board",
+        groupBy: effectiveGroupBy,
+        titleField: titleField?.id,
+      }
     : null;
 
   // Drag-to-move / edits: optimistic, then persist to the same rows endpoint.
@@ -144,7 +153,7 @@ export function BoardPage({ datasets }: { datasets: DatasetSummary[] }) {
                 <Label id="board-groupby" className="text-[12px] text-muted-foreground">
                   Group by
                 </Label>
-                <Select value={groupBy} onValueChange={setGroupBy}>
+                <Select value={effectiveGroupBy} onValueChange={setGroupBy}>
                   <SelectTrigger aria-labelledby="board-groupby" className="w-56">
                     <SelectValue placeholder="Choose a column" />
                   </SelectTrigger>
