@@ -118,7 +118,7 @@ export function CommandMenu({
             <LayoutDashboard />
             Go to overview
           </CommandItem>
-          <CommandItem value="import data upload" onSelect={() => go("/app?import=1")}>
+          <CommandItem value="import data upload" onSelect={() => go("/app/import")}>
             <Plus />
             Import data
           </CommandItem>

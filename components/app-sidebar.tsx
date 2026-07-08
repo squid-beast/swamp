@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   Plus,
@@ -69,8 +69,6 @@ export function AppSidebar({
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const onOverview = pathname === "/app" && searchParams.get("import") !== "1";
   // Dropdown → AlertDialog: hold the pending dataset so the confirm lives
   // outside the (closing) dropdown menu.
   const [toDelete, setToDelete] = React.useState<DatasetSummary | null>(null);
@@ -124,7 +122,7 @@ export function AppSidebar({
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
-                <SidebarMenuButton asChild isActive={onOverview} tooltip="Overview">
+                <SidebarMenuButton asChild isActive={pathname === "/app"} tooltip="Overview">
                   <Link href="/app">
                     <LayoutGrid />
                     <span>Overview</span>
@@ -138,8 +136,8 @@ export function AppSidebar({
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
-                <SidebarMenuButton asChild tooltip="Import data">
-                  <Link href="/app?import=1">
+                <SidebarMenuButton asChild isActive={pathname === "/app/import"} tooltip="Import data">
+                  <Link href="/app/import">
                     <Plus />
                     <span>Import data</span>
                   </Link>

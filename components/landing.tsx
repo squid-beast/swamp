@@ -69,7 +69,7 @@ export function Landing() {
               </Link>
             </Button>
             <Button asChild size="lg" variant="outline" className="h-11">
-              <Link href="/app?import=1">Import data</Link>
+              <Link href="/app/import">Import data</Link>
             </Button>
           </div>
         </div>

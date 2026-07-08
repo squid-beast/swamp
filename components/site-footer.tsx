@@ -9,7 +9,7 @@ const COLUMNS: { heading: string; links: FLink[] }[] = [
       { label: "Features", href: "/#features" },
       { label: "How it works", href: "/#how" },
       { label: "Open workspace", href: "/app" },
-      { label: "Import data", href: "/app?import=1" },
+      { label: "Import data", href: "/app/import" },
     ],
   },
   {

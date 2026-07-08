@@ -1,14 +1,50 @@
-import { Suspense } from "react";
-import { store } from "@/storage/store";
-import { Home } from "@/components/Home";
+import { redirect } from "next/navigation";
+import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
+import { Overview } from "@/components/overview";
 
 export const dynamic = "force-dynamic";
 
-export default async function Page() {
-  const datasets = await store.list();
+export default async function OverviewPage() {
+  if (!isSupabaseConfigured) {
+    return <Overview firstName="" userId="" needsProfile={false} onboarded />;
+  }
+
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/sign-in");
+
+  // Resilient to migration 0004 not being applied yet: if the `onboarded` column
+  // doesn't exist, fall back to name-only and suppress the onboarding flow.
+  let firstName = "";
+  let needsProfile = true;
+  let onboarded = true;
+  const full = await supabase
+    .from("profiles")
+    .select("first_name,last_name,onboarded")
+    .eq("id", user.id)
+    .maybeSingle();
+  if (full.error) {
+    const basic = await supabase
+      .from("profiles")
+      .select("first_name,last_name")
+      .eq("id", user.id)
+      .maybeSingle();
+    firstName = basic.data?.first_name ?? "";
+    needsProfile = !basic.data?.first_name || !basic.data?.last_name;
+  } else {
+    firstName = full.data?.first_name ?? "";
+    needsProfile = !full.data?.first_name || !full.data?.last_name;
+    onboarded = full.data?.onboarded ?? false;
+  }
+
   return (
-    <Suspense>
-      <Home initial={datasets} />
-    </Suspense>
+    <Overview
+      firstName={firstName}
+      userId={user.id}
+      needsProfile={needsProfile}
+      onboarded={onboarded}
+    />
   );
 }
