@@ -38,11 +38,13 @@ import { cn } from "@/lib/utils";
 
 const TYPE_GLYPH: Record<string, string> = {
   text: "Aa", longText: "¶", number: "#", currency: "$", percent: "%",
-  boolean: "✓", date: "◷", email: "@", phone: "☎", url: "↗", image: "▣",
+  rating: "★", boolean: "✓", date: "◷", datetime: "◷", time: "◔",
+  duration: "⧗", year: "Y", email: "@", phone: "☎", url: "↗", image: "▣",
+  color: "◆", uuid: "◇", coordinates: "⌖",
   singleSelect: "◉", multiSelect: "⁘", status: "●", json: "{}",
 };
 
-const NUMERIC = new Set(["number", "currency", "percent"]);
+const NUMERIC = new Set(["number", "currency", "percent", "rating", "year"]);
 const EDITABLE_SELECT = new Set(["status", "singleSelect"]);
 const parseNum = (v: unknown) => {
   const n = parseFloat(String(v ?? "").replace(/[^0-9.-]/g, ""));

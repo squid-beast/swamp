@@ -1,7 +1,7 @@
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import { Dataset, Row } from "@/core/types";
-import { inferFields } from "./inference";
+import { inferFields, type FormatHint } from "./inference";
 import { recommendViews } from "./recommend";
 
 // ── Every source funnels into ingest(). Adding a source = adding one parser. ──
@@ -9,6 +9,7 @@ import { recommendViews } from "./recommend";
 export interface ParsedTable {
   columns: string[];
   rows: Record<string, unknown>[];
+  formatHints?: Record<string, FormatHint>; // per-column Excel number-format signals
 }
 
 export function parseCSV(text: string): ParsedTable {
@@ -22,21 +23,82 @@ export function parseCSV(text: string): ParsedTable {
 }
 
 export function parseXLSX(buf: ArrayBuffer): ParsedTable {
-  // cellDates → date-formatted cells become JS Date objects instead of raw
-  // serials (e.g. 46142), so a "Date" column doesn't get typed as a number.
-  const wb = XLSX.read(buf, { type: "array", cellDates: true });
+  // cellNF → expose each cell's number format (.z); cellDates → real Date objects.
+  const wb = XLSX.read(buf, { type: "array", cellDates: true, cellNF: true });
   const ws = wb.Sheets[wb.SheetNames[0]];
-  const raw = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: "" });
-  // Normalize Date objects to date-only / ISO-like strings so inference detects
-  // "date" and JSON storage round-trips cleanly. Uses the date's own calendar
-  // fields (SheetJS aligns them to the sheet's date) — no timezone off-by-one.
-  const rows = raw.map((r) => {
-    const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(r)) out[k] = v instanceof Date ? excelDateToString(v) : v;
-    return out;
-  });
-  const columns = rows.length ? Object.keys(rows[0]) : [];
-  return { columns, rows };
+  const ref = ws?.["!ref"];
+  if (!ref) return { columns: [], rows: [], formatHints: {} };
+  const range = XLSX.utils.decode_range(ref);
+  const r0 = range.s.r;
+
+  // Header row → column name + sheet column index (dedupe blank/repeated headers).
+  const cols: { name: string; c: number }[] = [];
+  const used = new Set<string>();
+  for (let c = range.s.c; c <= range.e.c; c++) {
+    const cell = ws[XLSX.utils.encode_cell({ r: r0, c })];
+    let name = cell ? String(cell.v ?? "").trim() : "";
+    if (!name) name = `col_${c + 1}`;
+    while (used.has(name)) name = `${name}_`;
+    used.add(name);
+    cols.push({ name, c });
+  }
+
+  // Tally each column's cell formats so a currency/percent/text column types
+  // correctly even when a value has no $ or % character.
+  const fmt: Record<string, { cur: number; pct: number; txt: number; seen: number }> = {};
+  for (const { name } of cols) fmt[name] = { cur: 0, pct: 0, txt: 0, seen: 0 };
+
+  const rows: Record<string, unknown>[] = [];
+  for (let r = r0 + 1; r <= range.e.r; r++) {
+    const row: Record<string, unknown> = {};
+    let empty = true;
+    for (const { name, c } of cols) {
+      const cell = ws[XLSX.utils.encode_cell({ r, c })];
+      let val: unknown = "";
+      // Skip error cells (#DIV/0! etc.) — their .v is a numeric error code that
+      // would pollute the column; treat them as empty.
+      if (cell && cell.t !== "e" && cell.v !== undefined && cell.v !== null && cell.v !== "") {
+        empty = false;
+        const z = String(cell.z ?? "");
+        const isPct = /%/.test(z);
+        const isCur = !isPct && /[$€£₹¥]|\[\$/.test(z);
+        const f = fmt[name];
+        f.seen++;
+        if (cell.t === "s") f.txt++;
+        if (isPct) f.pct++;
+        else if (isCur) f.cur++;
+        if (cell.t === "d" && cell.v instanceof Date) {
+          val = excelDateToString(cell.v);
+        } else if (isCur && typeof cell.w === "string") {
+          // Keep Excel's rendered currency (symbol → correct currency detection),
+          // but restore a minus lost to accounting/parenthesis negatives.
+          val =
+            typeof cell.v === "number" && cell.v < 0 && !cell.w.includes("-")
+              ? `-${cell.w.replace(/[()]/g, "")}`
+              : cell.w;
+        } else if (isPct && typeof cell.w === "string") {
+          val = cell.w; // Excel renders "25%"; the raw value is the 0.25 fraction.
+        } else {
+          val = cell.v;
+        }
+      }
+      row[name] = val;
+    }
+    if (!empty) rows.push(row);
+  }
+
+  const formatHints: Record<string, FormatHint> = {};
+  for (const { name } of cols) {
+    const f = fmt[name];
+    if (!f.seen) continue;
+    const h: FormatHint = {};
+    if (f.cur / f.seen > 0.5) h.currency = true;
+    if (f.pct / f.seen > 0.5) h.percent = true;
+    if (f.txt / f.seen > 0.7) h.textFormatted = true;
+    if (Object.keys(h).length) formatHints[name] = h;
+  }
+
+  return { columns: cols.map((x) => x.name), rows, formatHints };
 }
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
@@ -102,7 +164,7 @@ export function ingest(
   source: Dataset["source"],
   table: ParsedTable
 ): { dataset: Dataset; rows: Row[] } {
-  const fields = inferFields(table.columns, table.rows);
+  const fields = inferFields(table.columns, table.rows, table.formatHints);
   // remap rows from source column names to stable field ids
   const rows: Row[] = table.rows.map((r, i) => {
     const row: Row = { __id: `r_${i}` };

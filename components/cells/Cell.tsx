@@ -1,6 +1,6 @@
 "use client";
 import { FieldMeta } from "@/core/types";
-import { Check, Minus, ExternalLink, Mail, Phone, ChevronRight } from "lucide-react";
+import { Check, Minus, ExternalLink, Mail, Phone, ChevronRight, MapPin } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 // ── The renderer. Input: metadata + value. It has no idea where data came from. ──
@@ -86,6 +86,66 @@ export function Cell({ field, value, wrap = false }: { field: FieldMeta; value: 
         </span>
       );
     }
+    case "datetime": {
+      const d = parseDateValue(s);
+      return (
+        <span className="whitespace-nowrap font-mono-data text-[13px] text-muted-foreground">
+          {d
+            ? d.toLocaleString("en-US", {
+                month: "short",
+                day: "numeric",
+                year: "numeric",
+                hour: "numeric",
+                minute: "2-digit",
+              })
+            : s}
+        </span>
+      );
+    }
+    case "time":
+    case "duration":
+      return <span className="whitespace-nowrap font-mono-data text-[13px] text-muted-foreground">{s}</span>;
+    case "year":
+      return <span className="font-mono-data text-[13px] tabular-nums">{s}</span>;
+    case "rating": {
+      const n = toNum(value);
+      if (n === null) return <span className="font-mono-data text-[13px]">{s}</span>;
+      const full = Math.max(0, Math.min(5, Math.round(n)));
+      return (
+        <span className="inline-flex items-center gap-1 whitespace-nowrap">
+          <span className="text-[13px] tracking-tight" style={{ color: "var(--c-amber-fg)" }}>
+            {"★".repeat(full)}
+            <span className="text-muted-foreground/40">{"★".repeat(5 - full)}</span>
+          </span>
+          <span className="font-mono-data text-[11.5px] tabular-nums text-muted-foreground">{n}</span>
+        </span>
+      );
+    }
+    case "color": {
+      const valid = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(s);
+      return (
+        <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+          <span
+            className="size-3.5 shrink-0 rounded ring-1 ring-border"
+            style={{ background: valid ? s : "transparent" }}
+          />
+          <span className="font-mono-data text-[12px] uppercase">{s}</span>
+        </span>
+      );
+    }
+    case "uuid":
+      return (
+        <span title={s} className="font-mono-data text-[11.5px] text-muted-foreground">
+          {s.length > 13 ? `${s.slice(0, 8)}…${s.slice(-4)}` : s}
+        </span>
+      );
+    case "coordinates":
+      return (
+        <span className="inline-flex items-center gap-1 whitespace-nowrap font-mono-data text-[12px]">
+          <MapPin size={12} className="shrink-0 opacity-50" />
+          {s}
+        </span>
+      );
     case "email":
       return (
         <a href={`mailto:${s}`} className="inline-flex items-center gap-1.5 hover:underline underline-offset-2" style={{ color: "var(--c-sky-fg)" }}>
