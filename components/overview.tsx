@@ -31,6 +31,7 @@ const SUBTITLES = [
 
 function greetWord(): string {
   const h = new Date().getHours();
+  if (h < 5) return "Still up";
   return h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
 }
 
