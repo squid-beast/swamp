@@ -8,6 +8,7 @@ import {
   Plus,
   Search,
   LayoutGrid,
+  Kanban,
   MoreHorizontal,
   Pencil,
   Trash2,
@@ -141,6 +142,18 @@ export function AppSidebar({
                   <Link href="/app?import=1">
                     <Plus />
                     <span>Import data</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  isActive={pathname === "/app/board"}
+                  tooltip="Kanban Board"
+                >
+                  <Link href="/app/board">
+                    <Kanban />
+                    <span>Kanban Board</span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
