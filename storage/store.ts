@@ -14,6 +14,7 @@ export interface StorageAdapter {
   saveOverrides(id: string, overrides: Record<string, FieldOverride>): Promise<void>;
   saveViews(id: string, views: ViewConfig[]): Promise<void>;
   updateRows(id: string, patches: RowPatch[]): Promise<void>;
+  insertRows(id: string, rows: Row[]): Promise<number>; // returns new rowCount
   deleteRows(id: string, rowIds: string[]): Promise<number>; // returns new rowCount
   rename(id: string, name: string): Promise<void>;
   remove(id: string): Promise<void>;
@@ -94,6 +95,17 @@ class FileStore implements StorageAdapter {
     fs.writeFileSync(this.rowsPath(id), JSON.stringify(rows));
     ds.updatedAt = new Date().toISOString();
     fs.writeFileSync(this.dsPath(id), JSON.stringify(ds));
+  }
+
+  async insertRows(id: string, newRows: Row[]): Promise<number> {
+    const ds = await this.get(id);
+    if (!ds) throw new Error("not found");
+    const rows = [...(await this.getRows(id)), ...newRows];
+    fs.writeFileSync(this.rowsPath(id), JSON.stringify(rows));
+    ds.rowCount = rows.length;
+    ds.updatedAt = new Date().toISOString();
+    fs.writeFileSync(this.dsPath(id), JSON.stringify(ds));
+    return rows.length;
   }
 
   async deleteRows(id: string, rowIds: string[]): Promise<number> {
@@ -271,6 +283,38 @@ class SupabaseStore implements StorageAdapter {
       if (uErr) throw uErr;
     }
     await db.from("datasets").update({ updated_at: new Date().toISOString() }).eq("id", id);
+  }
+
+  async insertRows(id: string, newRows: Row[]): Promise<number> {
+    const db = this.db();
+    // Append after the current max ord so new rows sort to the end.
+    const { data: last } = await db
+      .from("dataset_rows")
+      .select("ord")
+      .eq("dataset_id", id)
+      .order("ord", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    let ord = ((last?.ord as number | undefined) ?? -1) + 1;
+    const payload = newRows.map((r) => ({
+      dataset_id: id,
+      row_id: r.__id,
+      ord: ord++,
+      data: rowValues(r),
+    }));
+    const { error } = await db.from("dataset_rows").insert(payload);
+    if (error) throw error;
+    const { count, error: cErr } = await db
+      .from("dataset_rows")
+      .select("row_id", { count: "exact", head: true })
+      .eq("dataset_id", id);
+    if (cErr) throw cErr;
+    const rowCount = count ?? 0;
+    await db
+      .from("datasets")
+      .update({ row_count: rowCount, updated_at: new Date().toISOString() })
+      .eq("id", id);
+    return rowCount;
   }
 
   async deleteRows(id: string, rowIds: string[]): Promise<number> {

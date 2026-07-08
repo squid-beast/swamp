@@ -177,6 +177,26 @@ export function Workspace({ dataset, rows }: { dataset: Dataset; rows: Row[] }) 
     toast.success(rowIds.length === 1 ? "Row deleted" : `${rowIds.length} rows deleted`);
   };
 
+  const insertRow = async (values: Record<string, unknown>) => {
+    const res = await fetch(`/api/datasets/${ds.id}/rows`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ values }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) return toast.error(json.error ?? "Could not add row");
+    // Dedupe on __id: on a live sheet the realtime INSERT broadcast may append
+    // the same row first, so only add rows not already present.
+    setData((d) => {
+      const have = new Set(d.map((r) => r.__id));
+      return [...d, ...((json.rows as Row[]) ?? []).filter((r) => !have.has(r.__id))];
+    });
+    toast.success("Row added");
+  };
+
+  const editRow = (rowId: string, values: Record<string, unknown>) =>
+    patchRows([{ __id: rowId, values }]);
+
   const changeView = (id: string) => {
     if (!id) return;
     setActiveId(id);
@@ -374,6 +394,8 @@ export function Workspace({ dataset, rows }: { dataset: Dataset; rows: Row[] }) 
             onToggleHidden={toggleHidden}
             onUpdateCell={updateCell}
             onDeleteRows={removeRows}
+            onInsertRow={insertRow}
+            onEditRow={editRow}
           />
         )}
         {view?.type === "kanban" && (
