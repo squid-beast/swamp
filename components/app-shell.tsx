@@ -1,9 +1,11 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Search } from "lucide-react";
-import { DatasetSummary } from "@/core/types";
+import { DatasetSummary, Money } from "@/core/types";
+import { fmtUSD } from "@/lib/format";
 import {
   SidebarProvider,
   SidebarInset,
@@ -28,10 +30,12 @@ export type ShellUser = { name: string; email: string; avatarUrl: string | null 
 export function AppShell({
   datasets,
   user,
+  money,
   children,
 }: {
   datasets: DatasetSummary[];
   user?: ShellUser | null;
+  money?: Money | null;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -90,6 +94,7 @@ export function AppShell({
             >
               <Search className="size-4" />
             </Button>
+            {money && <BalanceBadge money={money} />}
             <ThemeToggle />
           </div>
         </header>
@@ -99,5 +104,28 @@ export function AppShell({
 
       <CommandMenu datasets={datasets} open={cmdOpen} onOpenChange={setCmdOpen} />
     </SidebarProvider>
+  );
+}
+
+// The money number, always in view — just the amount, beside the theme toggle.
+// Hover for the full picture; click through to the Overview money card.
+function BalanceBadge({ money }: { money: Money }) {
+  const detail = [
+    `Stripe balance ${fmtUSD(money.balance)}`,
+    `this month ${fmtUSD(money.revenueMtd)}`,
+    `pipeline ${fmtUSD(money.pipelineValue)}`,
+    money.updatedAt ? `updated ${new Date(money.updatedAt).toLocaleString()}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  return (
+    <Link
+      href="/app"
+      title={detail}
+      aria-label={`Balance: ${detail}`}
+      className="mr-0.5 flex h-8 items-center rounded-md border border-border/70 bg-muted/40 px-2.5 font-display text-[13px] font-bold tabular-nums tracking-tight transition-colors hover:bg-muted"
+    >
+      {fmtUSD(money.balance)}
+    </Link>
   );
 }

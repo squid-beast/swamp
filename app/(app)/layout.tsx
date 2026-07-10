@@ -1,5 +1,6 @@
 import { AppShell, type ShellUser } from "@/components/app-shell";
 import { store } from "@/storage/store";
+import { getMoney } from "@/lib/money";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 
 // The sidebar reflects the live dataset list, so render this subtree dynamically.
@@ -31,9 +32,9 @@ export default async function AppLayout({
     }
   }
 
-  const datasets = await store.list();
+  const [datasets, money] = await Promise.all([store.list(), getMoney()]);
   return (
-    <AppShell datasets={datasets} user={user}>
+    <AppShell datasets={datasets} user={user} money={money}>
       {children}
     </AppShell>
   );

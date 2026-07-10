@@ -101,3 +101,15 @@ export interface DatasetSummary {
 export function resolveFields(ds: Dataset): FieldMeta[] {
   return ds.fields.map((f) => ({ ...f, ...(ds.overrides[f.id] ?? {}) }));
 }
+
+// ── Money metrics the agent pushes via /api/agent/metrics ("Money (AI)" dataset).
+//    Rendered in the header balance badge and the Overview money card.
+//    All amounts are USD dollars. ──
+export interface Money {
+  balance: number | null; // Stripe balance (available + pending)
+  revenueMtd: number | null; // collected this calendar month
+  pipelineValue: number | null; // est. value of active pipeline
+  pipelineCounts: string | null; // e.g. "New 12 · Contacted 5 · Replied 2"
+  topAction: string | null; // today's #1 money move
+  updatedAt: string | null; // ISO timestamp of last agent push
+}

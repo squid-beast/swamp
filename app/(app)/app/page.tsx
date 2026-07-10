@@ -1,12 +1,13 @@
 import { redirect } from "next/navigation";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
+import { getMoney } from "@/lib/money";
 import { Overview } from "@/components/overview";
 
 export const dynamic = "force-dynamic";
 
 export default async function OverviewPage() {
   if (!isSupabaseConfigured) {
-    return <Overview firstName="" userId="" needsProfile={false} onboarded />;
+    return <Overview firstName="" userId="" needsProfile={false} onboarded money={null} />;
   }
 
   const supabase = createClient();
@@ -39,12 +40,15 @@ export default async function OverviewPage() {
     onboarded = full.data?.onboarded ?? false;
   }
 
+  const money = await getMoney();
+
   return (
     <Overview
       firstName={firstName}
       userId={user.id}
       needsProfile={needsProfile}
       onboarded={onboarded}
+      money={money}
     />
   );
 }

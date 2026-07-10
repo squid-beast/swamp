@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Sparkles, Kanban, UploadCloud, LayoutGrid } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import type { Money } from "@/core/types";
+import { fmtUSD } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -40,11 +42,13 @@ export function Overview({
   userId,
   needsProfile,
   onboarded,
+  money,
 }: {
   firstName: string;
   userId: string;
   needsProfile: boolean;
   onboarded: boolean;
+  money?: Money | null;
 }) {
   const router = useRouter();
   const [name, setName] = React.useState(firstName);
@@ -86,9 +90,42 @@ export function Overview({
         <p className="text-[15px] text-muted-foreground">{sub}</p>
       </div>
 
+      {money && (
+        <div
+          className={cn(
+            "mt-8 w-full max-w-md transition-opacity duration-700",
+            mounted ? "opacity-100" : "opacity-0"
+          )}
+        >
+          <div className="grid grid-cols-3 divide-x divide-border/70 overflow-hidden rounded-xl border border-border/70 bg-card/50 text-left">
+            <MoneyStat label="Balance" value={fmtUSD(money.balance)} />
+            <MoneyStat label="This month" value={fmtUSD(money.revenueMtd)} />
+            <MoneyStat label="Pipeline" value={fmtUSD(money.pipelineValue)} />
+          </div>
+          {money.pipelineCounts && (
+            <p className="mt-2 text-[12px] tabular-nums text-muted-foreground">{money.pipelineCounts}</p>
+          )}
+          {money.topAction && (
+            <p className="mx-auto mt-3 max-w-sm text-[13px] leading-relaxed text-muted-foreground">
+              <span className="font-medium text-foreground">💰 Next money move:</span>{" "}
+              {money.topAction}
+            </p>
+          )}
+        </div>
+      )}
+
       <ProfileGate open={profileOpen} userId={userId} onDone={onProfileDone} />
       <OnboardingDialog open={onboardOpen} onClose={closeOnboarding} />
     </main>
+  );
+}
+
+function MoneyStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex flex-col gap-0.5 px-4 py-3">
+      <span className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</span>
+      <span className="font-display text-lg font-extrabold tabular-nums">{value}</span>
+    </div>
   );
 }
 
