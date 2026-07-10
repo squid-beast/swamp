@@ -4,38 +4,38 @@ import { Button } from "@/components/ui/button";
 
 const FEATURES = [
   {
-    title: "Type inference",
-    body: "Emails, currencies, dates, statuses, URLs, images: 13 column types detected from the values themselves. You never map a schema.",
+    title: "it just knows",
+    body: "emails, money, dates, statuses, links, pics — 13 column types sniffed straight from the values. zero schema mapping. big brain energy.",
   },
   {
-    title: "Field registry",
-    body: "Rename or hide fields. Your changes persist, and re-imports never overwrite them.",
+    title: "ur edits are sacred",
+    body: "rename or hide fields and it sticks. re-imports can never overwrite your changes. respectfully.",
   },
   {
-    title: "Views from metadata",
-    body: "Grid, board, gallery, and dashboard appear when the data supports them. Edit statuses inline or drag cards between lanes.",
+    title: "views spawn themselves",
+    body: "grid, board, gallery, dashboard — they appear when the data supports them. edit statuses inline, drag cards between lanes. goes brrr.",
   },
   {
-    title: "Files and webhooks",
-    body: "Upload CSV, XLSX, or JSON. Or POST raw JSON to the API and the dataset shows up ready to use.",
+    title: "eats everything",
+    body: "CSV, XLSX, JSON — or POST raw webhook chaos at the API and the dataset shows up ready to use. om nom.",
   },
 ];
 
 const STEPS = [
   {
     n: "1",
-    title: "Send data",
-    body: "Upload a file or POST JSON to /api/datasets. Nested webhook payloads flatten automatically.",
+    title: "yeet data",
+    body: "upload a file or POST JSON to /api/datasets. nested webhook payloads flatten themselves. fr.",
   },
   {
     n: "2",
-    title: "The engine types it",
-    body: "Each column gets a semantic type, a field registry entry, and a confidence score.",
+    title: "engine cooks",
+    body: "every column gets a semantic type, a field registry entry, and a confidence score. no thoughts, just types.",
   },
   {
     n: "3",
-    title: "Work with it",
-    body: "Sort, search, and filter the grid. Drag kanban cards. Read the auto-built dashboard.",
+    title: "you vibe",
+    body: "sort, search, filter the grid. drag kanban cards. read the dashboard that built itself. gg.",
   },
 ];
 
@@ -53,23 +53,23 @@ export function Landing() {
       <section className="mx-auto grid w-full max-w-6xl gap-12 px-4 py-16 md:py-24 lg:grid-cols-2 lg:items-center">
         <div className="rise flex flex-col gap-6">
           <h1 className="font-display text-5xl font-extrabold leading-[1.02] tracking-tight md:text-6xl">
-            Dump it in the SWAMP.
+            yeet ur data into the SWAMP.
             <br />
-            <span className="text-muted-foreground">Get a clean UI out.</span>
+            <span className="text-muted-foreground">clean UI comes out. no cap.</span>
           </h1>
           <p className="max-w-md text-[15px] leading-relaxed text-muted-foreground">
-            Throw in a webhook, JSON, a CSV, or a spreadsheet. SWAMP reads it, types every
-            column, and builds the grid, board, gallery, and dashboard for you.
+            webhook, JSON, CSV, that cursed spreadsheet — throw it in. SWAMP reads it, types
+            every column, and speedruns you a grid, board, gallery and dashboard. it just works.
           </p>
           <div className="flex flex-wrap items-center gap-3">
             <Button asChild size="lg" className="h-11 gap-2">
               <Link href="/app">
-                Launch the workspace
+                enter the swamp
                 <ArrowRight className="size-4" />
               </Link>
             </Button>
             <Button asChild size="lg" variant="outline" className="h-11">
-              <Link href="/app/import">Import data</Link>
+              <Link href="/app/import">feed it data</Link>
             </Button>
           </div>
         </div>
@@ -92,7 +92,7 @@ export function Landing() {
             </pre>
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 border-t px-4 py-3 text-[12px] text-muted-foreground">
               <span className="font-mono-data text-success">200</span>
-              <span>inferred</span>
+              <span>cooked</span>
               {VIEW_CHIPS.map(({ icon: Icon, label }) => (
                 <span
                   key={label}
@@ -111,7 +111,7 @@ export function Landing() {
       <section id="features" className="border-t bg-muted/30">
         <div className="mx-auto max-w-6xl px-4 py-16 md:py-20">
           <h2 className="mb-8 font-display text-3xl font-extrabold tracking-tight">
-            What it does
+            what it do
           </h2>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {FEATURES.map(({ title, body }) => (
@@ -130,7 +130,7 @@ export function Landing() {
       {/* ── How it works ── */}
       <section id="how" className="mx-auto w-full max-w-6xl px-4 py-16 md:py-20">
         <h2 className="mb-8 font-display text-3xl font-extrabold tracking-tight">
-          How it works
+          the lore
         </h2>
         <div className="grid gap-4 md:grid-cols-3">
           {STEPS.map(({ n, title, body }) => (
@@ -149,14 +149,14 @@ export function Landing() {
       <section className="border-t bg-muted/30">
         <div className="mx-auto flex max-w-6xl flex-col items-center gap-5 px-4 py-14 text-center">
           <h2 className="max-w-xl font-display text-3xl font-extrabold tracking-tight">
-            Three sample datasets are loaded.
+            3 sample datasets already in there. free real estate.
           </h2>
           <p className="max-w-md text-[14.5px] text-muted-foreground">
-            Open the workspace, edit a status, drag a card, filter the grid.
+            open the workspace, poke a status, drag a card, filter the grid. touch data, not grass.
           </p>
           <Button asChild size="lg" className="h-11 gap-2">
             <Link href="/app">
-              Launch the workspace
+              enter the swamp
               <ArrowRight className="size-4" />
             </Link>
           </Button>
