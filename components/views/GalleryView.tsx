@@ -1,6 +1,7 @@
 "use client";
 import { FieldMeta, Row, ViewConfig } from "@/core/types";
 import { Cell } from "../cells/Cell";
+import { ExpandableText } from "../cells/ExpandableText";
 
 export function GalleryView({ fields, rows, view }: { fields: FieldMeta[]; rows: Row[]; view: ViewConfig }) {
   const imageField = fields.find((f) => f.id === view.imageField) ?? fields.find((f) => f.type === "image");
@@ -30,14 +31,18 @@ export function GalleryView({ fields, rows, view }: { fields: FieldMeta[]; rows:
           )}
           <div className="p-3">
             {titleField && (
-              <div className="mb-1.5 truncate text-[13.5px] font-semibold">
-                {String(r[titleField.id] ?? "Untitled")}
-              </div>
+              <ExpandableText
+                text={String(r[titleField.id] ?? "Untitled")}
+                label={titleField.displayName}
+                lines={2}
+                maxPreviewWidth="100%"
+                previewClassName="text-[13.5px] font-semibold"
+              />
             )}
             <div className="flex flex-col gap-1">
               {detailFields.map((f) => (
-                <div key={f.id} className="truncate text-[12px]">
-                  <Cell field={f} value={r[f.id]} />
+                <div key={f.id} className="min-w-0 text-[12px]">
+                  <Cell field={f} value={r[f.id]} wrap />
                 </div>
               ))}
             </div>

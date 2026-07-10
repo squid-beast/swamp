@@ -2,6 +2,7 @@
 import { FieldMeta } from "@/core/types";
 import { Check, Minus, ExternalLink, Mail, Phone, ChevronRight, MapPin } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { ExpandableText } from "./ExpandableText";
 
 // ── The renderer. Input: metadata + value. It has no idea where data came from. ──
 
@@ -162,10 +163,31 @@ export function Cell({ field, value, wrap = false }: { field: FieldMeta; value: 
       );
     case "url":
       return (
-        <a href={s} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 hover:underline underline-offset-2 max-w-[220px] truncate" style={{ color: "var(--c-sky-fg)" }}>
-          <ExternalLink size={13} className="shrink-0 opacity-70" />
-          <span className="truncate">{s.replace(/^https?:\/\/(www\.)?/, "")}</span>
-        </a>
+        <ExpandableText
+          text={s}
+          label={field.displayName}
+          maxPreviewWidth="220px"
+          lines={1}
+          expanded={
+            <a
+              href={s}
+              target="_blank"
+              rel="noreferrer"
+              className="break-all hover:underline underline-offset-2"
+              style={{ color: "var(--c-sky-fg)" }}
+            >
+              {s}
+            </a>
+          }
+        >
+          <span
+            className="inline-flex max-w-[220px] items-center gap-1.5 hover:underline underline-offset-2"
+            style={{ color: "var(--c-sky-fg)" }}
+          >
+            <ExternalLink size={13} className="shrink-0 opacity-70" />
+            <span className="truncate">{s.replace(/^https?:\/\/(www\.)?/, "")}</span>
+          </span>
+        </ExpandableText>
       );
     case "image":
       // eslint-disable-next-line @next/next/no-img-element
@@ -199,17 +221,31 @@ export function Cell({ field, value, wrap = false }: { field: FieldMeta; value: 
       );
     }
     case "longText":
-      return <span className="text-muted-foreground line-clamp-2 max-w-[320px]">{s}</span>;
-    default:
-      // In the grid, wrap-and-clamp long values (e.g. descriptions) so they stay
-      // inside their cell instead of overflowing into the next column (full text
-      // on hover). Other views (gallery/kanban) keep the original single line.
+      return (
+        <ExpandableText
+          text={s}
+          label={field.displayName}
+          maxPreviewWidth="320px"
+          previewClassName="text-muted-foreground"
+        />
+      );
+    default: {
+      const expandable = s.length > 32 || s.includes("\n");
+      if (expandable) {
+        return (
+          <ExpandableText
+            text={s}
+            label={field.displayName}
+            lines={wrap ? 2 : 1}
+            maxPreviewWidth={wrap ? "420px" : "100%"}
+          />
+        );
+      }
       return wrap ? (
-        <span title={s} className="line-clamp-2 max-w-[420px] whitespace-normal break-words">
-          {s}
-        </span>
+        <span className="line-clamp-2 max-w-[420px] whitespace-normal break-words">{s}</span>
       ) : (
         <span className="whitespace-nowrap">{s}</span>
       );
+    }
   }
 }

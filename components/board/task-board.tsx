@@ -24,6 +24,7 @@ import {
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { RenameDialog } from "@/components/rename-dialog";
 import { TaskCardDialog, type CardDraft } from "./task-card-dialog";
+import { ExpandableText } from "@/components/cells/ExpandableText";
 import { cn } from "@/lib/utils";
 
 type Board = { id: string; name: string };
@@ -544,9 +545,14 @@ export function TaskBoard({ userId }: { userId: string }) {
                         </div>
 
                         {card.description && (
-                          <p className="mt-1 line-clamp-2 break-words text-[12px] text-muted-foreground">
-                            {card.description}
-                          </p>
+                          <ExpandableText
+                            text={card.description}
+                            label="Description"
+                            lines={2}
+                            maxPreviewWidth="100%"
+                            previewClassName="text-[12px] text-muted-foreground"
+                            className="mt-1"
+                          />
                         )}
 
                         {(card.priority || due) && (
