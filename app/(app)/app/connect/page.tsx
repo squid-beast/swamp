@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
-import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
-import { ConnectPanel } from "@/components/connect/connect-panel";
+import { createClient, isSupabaseConfigured } from "@/shared/supabase/server";
+import { ConnectPanel } from "@/features/sheets/components/connect-panel";
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +17,7 @@ export default async function ConnectPage() {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) redirect("/sign-in");
+  if (!user) redirect("/auth/sign-in");
 
   const { data: cred } = await supabase
     .from("google_credentials")

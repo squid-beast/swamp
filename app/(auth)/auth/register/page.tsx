@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
-import { RegisterForm } from "@/components/auth/register-form";
+import { RegisterForm } from "@/features/auth/components/register-form";
 
 export const metadata: Metadata = { title: "Create account — SWAMP" };
 
@@ -17,7 +17,7 @@ export default function RegisterPage() {
       </Suspense>
       <p className="text-center text-[13px] text-muted-foreground">
         Already have an account?{" "}
-        <Link href="/sign-in" className="font-medium text-foreground hover:underline">
+        <Link href="/auth/sign-in" className="font-medium text-foreground hover:underline">
           Sign in
         </Link>
       </p>

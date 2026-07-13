@@ -1,8 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { FieldMeta, Row } from "@/core/types";
-import { validateValue } from "@/core/validate";
+import { FieldMeta, Row } from "@/features/datasets/types";
+import { validateValue } from "@/features/datasets/validate";
 import {
   Sheet,
   SheetContent,
@@ -10,19 +10,19 @@ import {
   SheetFooter,
   SheetHeader,
   SheetTitle,
-} from "@/components/ui/sheet";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
+} from "@/shared/ui/sheet";
+import { Button } from "@/shared/ui/button";
+import { Input } from "@/shared/ui/input";
+import { Label } from "@/shared/ui/label";
+import { Checkbox } from "@/shared/ui/checkbox";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
-import { cn } from "@/lib/utils";
+} from "@/shared/ui/select";
+import { cn } from "@/shared/lib/utils";
 
 // Native inputs whose value must be in a canonical format. Money/percent/plain
 // numbers use a text input (inputMode decimal) so "$1,234.50" round-trips.

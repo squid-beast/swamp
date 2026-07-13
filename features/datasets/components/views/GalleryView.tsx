@@ -1,7 +1,7 @@
 "use client";
-import { FieldMeta, Row, ViewConfig } from "@/core/types";
+import { FieldMeta, Row, ViewConfig } from "@/features/datasets/types";
 import { Cell } from "../cells/Cell";
-import { ExpandableText } from "../cells/ExpandableText";
+import { ExpandableText } from "@/shared/ui/expandable-text";
 
 export function GalleryView({ fields, rows, view }: { fields: FieldMeta[]; rows: Row[]; view: ViewConfig }) {
   const imageField = fields.find((f) => f.id === view.imageField) ?? fields.find((f) => f.type === "image");

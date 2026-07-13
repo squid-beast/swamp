@@ -4,14 +4,14 @@ import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Search } from "lucide-react";
-import { DatasetSummary, Money } from "@/core/types";
-import { fmtUSD } from "@/lib/format";
+import { DatasetSummary, Money } from "@/features/datasets/types";
+import { fmtUSD } from "@/shared/lib/format";
 import {
   SidebarProvider,
   SidebarInset,
   SidebarTrigger,
-} from "@/components/ui/sidebar";
-import { Separator } from "@/components/ui/separator";
+} from "@/shared/ui/sidebar";
+import { Separator } from "@/shared/ui/separator";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -19,11 +19,11 @@ import {
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
-} from "@/components/ui/breadcrumb";
-import { Button } from "@/components/ui/button";
+} from "@/shared/ui/breadcrumb";
+import { Button } from "@/shared/ui/button";
 import { AppSidebar } from "./app-sidebar";
 import { CommandMenu } from "./command-menu";
-import { ThemeToggle } from "./theme-toggle";
+import { ThemeToggle } from "@/shared/components/theme-toggle";
 
 export type ShellUser = { name: string; email: string; avatarUrl: string | null };
 
@@ -52,7 +52,7 @@ export function AppShell({
     return () => document.removeEventListener("keydown", down);
   }, []);
 
-  const current = datasets.find((d) => pathname === `/d/${d.id}`);
+  const current = datasets.find((d) => pathname === `/app/datasets/${d.id}`);
 
   return (
     <SidebarProvider>

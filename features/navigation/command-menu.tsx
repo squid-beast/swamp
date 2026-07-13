@@ -17,7 +17,7 @@ import {
   SunMoon,
   Home,
 } from "lucide-react";
-import { DatasetSummary, ViewType } from "@/core/types";
+import { DatasetSummary, ViewType } from "@/features/datasets/types";
 import {
   CommandDialog,
   CommandInput,
@@ -27,7 +27,7 @@ import {
   CommandItem,
   CommandSeparator,
   CommandShortcut,
-} from "@/components/ui/command";
+} from "@/shared/ui/command";
 
 const SRC_ICON: Record<string, React.ComponentType<{ className?: string }>> = {
   csv: FileSpreadsheet,
@@ -62,7 +62,7 @@ export function CommandMenu({
     router.push(href);
   };
 
-  const current = datasets.find((d) => pathname === `/d/${d.id}`);
+  const current = datasets.find((d) => pathname === `/app/datasets/${d.id}`);
 
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange}>
@@ -80,7 +80,7 @@ export function CommandMenu({
                   <CommandItem
                     key={v}
                     value={`view ${meta.label} ${current.name}`}
-                    onSelect={() => go(`/d/${current.id}?view=${v}`)}
+                    onSelect={() => go(`/app/datasets/${current.id}?view=${v}`)}
                   >
                     <Icon />
                     {meta.label}
@@ -99,7 +99,7 @@ export function CommandMenu({
               <CommandItem
                 key={d.id}
                 value={`dataset ${d.name}`}
-                onSelect={() => go(`/d/${d.id}`)}
+                onSelect={() => go(`/app/datasets/${d.id}`)}
               >
                 <Icon />
                 <span className="truncate">{d.name}</span>

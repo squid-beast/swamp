@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
-import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
-import { ProfileForm } from "@/components/profile/profile-form";
+import { createClient, isSupabaseConfigured } from "@/shared/supabase/server";
+import { ProfileForm } from "@/features/auth/components/profile-form";
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +17,7 @@ export default async function ProfilePage() {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) redirect("/sign-in");
+  if (!user) redirect("/auth/sign-in");
 
   const { data: profile } = await supabase
     .from("profiles")

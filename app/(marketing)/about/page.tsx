@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/shared/ui/button";
 
 export const metadata: Metadata = { title: "About — SWAMP" };
 

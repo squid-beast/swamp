@@ -3,8 +3,8 @@
 // "Outreach Log (AI)" dataset (created on first push). GET → recent events.
 
 import { NextRequest, NextResponse } from "next/server";
-import { agentDenied, agentOwnerId, jsonError, serviceDb } from "@/lib/agent/service";
-import type { FieldMeta, ViewConfig } from "@/core/types";
+import { agentDenied, agentOwnerId, jsonError, serviceDb } from "@/features/agent/service";
+import type { FieldMeta, ViewConfig } from "@/features/datasets/types";
 
 export const dynamic = "force-dynamic";
 

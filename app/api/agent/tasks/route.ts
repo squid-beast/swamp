@@ -5,7 +5,7 @@
 // GET → board + columns + cards so the agent can read state back.
 
 import { NextRequest, NextResponse } from "next/server";
-import { agentDenied, agentOwnerId, jsonError, serviceDb, slugKey } from "@/lib/agent/service";
+import { agentDenied, agentOwnerId, jsonError, serviceDb, slugKey } from "@/features/agent/service";
 
 export const dynamic = "force-dynamic";
 

@@ -1,40 +1,62 @@
-# SWAMP — dump any data, get a UI (v1, local-first)
+# SWAMP
 
-Any source in → schema detection → type inference → field registry → metadata → Airtable-grade UI.
-No external services at runtime — everything runs locally.
+A schema-agnostic data workspace. Dump in a CSV, Excel file, JSON payload, webhook,
+or Google Sheet — SWAMP infers the field types, recommends views, and renders an
+Airtable-style Grid / Kanban / Gallery / Dashboard. Also ships a standalone task
+board and a headless API for AI agents.
 
-**Stack:** Next.js (App Router) · shadcn/ui (Radix) · Tailwind · TanStack Table · Recharts ·
-next-themes (light + dark) · Selawik (body) + Bricolage Grotesque (display).
+## Tech stack
 
-## Run
-```
+- **Next.js 14** (App Router), **React 18**, **TypeScript** (strict)
+- **Tailwind CSS** + **shadcn/ui** (Radix)
+- **TanStack Table**, **Recharts**
+- **Supabase** (Auth, Postgres, RLS, Realtime)
+- **Vercel** (hosting + cron)
+
+## Getting started
+
+```bash
 npm install
-npm run seed     # 3 fixture datasets (CSV x2, webhook JSON)
-npm run dev      # http://localhost:3000
+cp .env.local.example .env.local   # fill in Supabase / Google keys (optional for local)
+npm run dev                        # http://localhost:3000
 ```
 
-## What works
-- Import: CSV / XLSX / JSON upload, plus webhook: `POST /api/datasets?name=X` with raw JSON
-- Inference: email, phone, url, image, currency, percent, number, date, boolean,
-  status, single/multi-select, json, long text (heuristics, confidence-scored)
-- Field Registry: inferred layer + user override layer (rename/hide persist, never clobbered)
-- Views: auto-recommended per dataset — Grid (TanStack data-table: column visibility,
-  row selection, sticky header), Kanban, Gallery, Dashboard (auto KPIs + charts)
-- Editing: click a status badge to change it, drag kanban cards between lanes,
-  bulk-set status or delete selected rows, filter the grid by option values
-- App shell: collapsible sidebar, breadcrumbs, ⌘K command palette, light/dark theme toggle
-- Renderer sees only metadata + rows. Never the source schema.
-- Tests: `npm run e2e` against a running server exercises every endpoint.
+Without Supabase env vars, the app runs **open** on a local file-based store
+(`./data`, gitignored) — handy for local development and testing.
 
-## Morning swap points (each is one file)
-- `storage/store.ts` — implement `StorageAdapter` against Supabase, replace `FileStore`
-- `engine/import.ts` — add `parseGoogleSheet()` once OAuth/service-account key exists
-- `engine/llm.ts` (add) — Haiku pass for fields with confidence < 0.7
-- Write-back, auth, share links: intentionally out of v1 scope
+### Scripts
 
-## Architecture
-core/types.ts → engine/{import,inference,recommend}.ts → storage/store.ts →
-app/api/* → components/{app-shell,Workspace,views/*,cells/Cell.tsx}
+| Command | Description |
+|---|---|
+| `npm run dev` | Dev server |
+| `npm run build` | Production build (type-checked) |
+| `npm run start` | Serve the production build |
+| `npm run e2e` | Run the API pipeline test (needs a running server): `node scripts/e2e.mjs` |
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for what lives where and how to add a field type,
-a view, or an import source — and how to swap `FileStore` for Supabase.
+## Project structure
+
+Organized by **feature module** under `features/`, with a shared kernel under
+`shared/`, and thin routes under `app/`. See [ARCHITECTURE.md](./ARCHITECTURE.md)
+for the full layout, dependency rules, and route map.
+
+```
+app/        # routes (pages, layouts, API handlers) — thin
+features/   # datasets, task-board, sheets, agent, auth, marketing, overview, navigation
+shared/     # ui, lib, supabase, hooks, components
+supabase/   # SQL migrations
+```
+
+## Environment
+
+Set in `.env.local` (see `.env.local.example`):
+
+- `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` (or `…_PUBLISHABLE_KEY`)
+- `SUPABASE_SERVICE_ROLE_KEY` (agent/cron writes)
+- `AGENT_API_SECRET`, `AGENT_OWNER_EMAIL` (headless agent API)
+- `SYNC_JOB_SECRET` (Google Sheets cron)
+- Google OAuth keys for Sheets sync
+
+## Deployment
+
+Deploys to **Vercel**. `vercel.json` registers the `/api/sync` cron (every minute)
+for Google Sheets polling. Apply `supabase/migrations/*.sql` to your Supabase project.

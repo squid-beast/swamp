@@ -2,27 +2,27 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { Dataset, FieldOverride, Row, RowPatch, ViewType, ViewConfig, resolveFields } from "@/core/types";
+import { Dataset, FieldOverride, Row, RowPatch, ViewType, ViewConfig, resolveFields } from "@/features/datasets/types";
 import { GridView } from "./views/GridView";
 import { KanbanView } from "./views/KanbanView";
 import { GalleryView } from "./views/GalleryView";
 import { DashboardView } from "./views/DashboardView";
-import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
+import { createClient, isSupabaseConfigured } from "@/shared/supabase/client";
 import { Search, Table2, Kanban, Images, Gauge, SlidersHorizontal, Eye, EyeOff, RefreshCw, Plus, X } from "lucide-react";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
+import { Input } from "@/shared/ui/input";
+import { Button } from "@/shared/ui/button";
 import {
   Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger,
-} from "@/components/ui/sheet";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+} from "@/shared/ui/sheet";
+import { Tabs, TabsList, TabsTrigger } from "@/shared/ui/tabs";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { ScrollArea } from "@/components/ui/scroll-area";
+} from "@/shared/ui/dropdown-menu";
+import { ScrollArea } from "@/shared/ui/scroll-area";
 
 const VIEW_ICON: Record<ViewType, React.ReactNode> = {
   grid: <Table2 className="size-3.5" />,

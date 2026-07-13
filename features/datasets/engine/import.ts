@@ -1,6 +1,6 @@
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
-import { Dataset, Row } from "@/core/types";
+import { Dataset, Row } from "@/features/datasets/types";
 import { inferFields, type FormatHint } from "./inference";
 import { recommendViews } from "./recommend";
 

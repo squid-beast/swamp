@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ingest, parseCSV, parseJSON, parseXLSX } from "@/engine/import";
-import { store } from "@/storage/store";
-import { requireAuth } from "@/lib/supabase/server";
+import { ingest, parseCSV, parseJSON, parseXLSX } from "@/features/datasets/engine/import";
+import { store } from "@/features/datasets/storage/store";
+import { requireAuth } from "@/shared/supabase/server";
 
 export async function GET() {
   const denied = await requireAuth();

@@ -1,4 +1,4 @@
-import { FieldMeta, FieldType, SelectOption } from "@/core/types";
+import { FieldMeta, FieldType, SelectOption } from "@/features/datasets/types";
 
 // ── Heuristic inference. Pure functions, no LLM. Catalog-driven: strong value
 //    patterns first (they beat loose header keywords), then the "always-text"

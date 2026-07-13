@@ -1,10 +1,10 @@
 "use client";
 import { useMemo } from "react";
-import { FieldMeta, Row } from "@/core/types";
+import { FieldMeta, Row } from "@/features/datasets/types";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell as PCell,
 } from "recharts";
-import { Card } from "@/components/ui/card";
+import { Card } from "@/shared/ui/card";
 
 // ── Auto-dashboard: derives KPI cards + charts purely from field metadata. ──
 

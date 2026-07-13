@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { getAccessToken, readSheet } from "@/lib/google/sheets";
-import { sheetRowsToRows } from "@/lib/sheets/rows";
-import { FieldMeta } from "@/core/types";
+import { getAccessToken, readSheet } from "@/features/sheets/google/sheets";
+import { sheetRowsToRows } from "@/features/sheets/lib/rows";
+import { FieldMeta } from "@/features/datasets/types";
 
 // Background poller (Vercel Cron). No user session, so it authenticates to the
 // DB through the token-gated security-definer functions using SYNC_JOB_SECRET.

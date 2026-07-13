@@ -1,4 +1,4 @@
-import { FieldMeta, ViewConfig } from "@/core/types";
+import { FieldMeta, ViewConfig } from "@/features/datasets/types";
 
 // ── Rule-based view recommendation. Reads only metadata, never raw data. ──
 

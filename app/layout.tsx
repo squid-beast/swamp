@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import localFont from "next/font/local";
 import { Bricolage_Grotesque, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
-import { cn } from "@/lib/utils";
-import { ThemeProvider } from "@/components/theme-provider";
-import { Toaster } from "@/components/ui/sonner";
+import { cn } from "@/shared/lib/utils";
+import { ThemeProvider } from "@/shared/components/theme-provider";
+import { Toaster } from "@/shared/ui/sonner";
 
 // Body: Selawik, bundled OFL woff2 locally. Fallback "Segoe UI", system-ui.
 const selawik = localFont({

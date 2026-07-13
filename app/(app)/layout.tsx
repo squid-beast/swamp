@@ -1,7 +1,7 @@
-import { AppShell, type ShellUser } from "@/components/app-shell";
-import { store } from "@/storage/store";
-import { getMoney } from "@/lib/money";
-import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
+import { AppShell, type ShellUser } from "@/features/navigation/app-shell";
+import { store } from "@/features/datasets/storage/store";
+import { getMoney } from "@/features/overview/money";
+import { createClient, isSupabaseConfigured } from "@/shared/supabase/server";
 
 // The sidebar reflects the live dataset list, so render this subtree dynamically.
 export const dynamic = "force-dynamic";

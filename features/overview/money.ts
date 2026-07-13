@@ -4,8 +4,8 @@
 //    only ever sees their own money row. Returns null when unconfigured,
 //    signed out, or the agent hasn't pushed metrics yet (UI hides itself). ──
 
-import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
-import type { Money } from "@/core/types";
+import { createClient, isSupabaseConfigured } from "@/shared/supabase/server";
+import type { Money } from "@/features/datasets/types";
 
 const MONEY_DATASET = "Money (AI)";
 const ROW_ID = "r_money_current";

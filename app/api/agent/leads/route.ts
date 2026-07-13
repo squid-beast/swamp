@@ -7,8 +7,8 @@
 // dataset_rows realtime subscription in Workspace.
 
 import { NextRequest, NextResponse } from "next/server";
-import { agentDenied, agentOwnerId, jsonError, serviceDb, slugKey } from "@/lib/agent/service";
-import type { FieldMeta, ViewConfig } from "@/core/types";
+import { agentDenied, agentOwnerId, jsonError, serviceDb, slugKey } from "@/features/agent/service";
+import type { FieldMeta, ViewConfig } from "@/features/datasets/types";
 
 export const dynamic = "force-dynamic";
 

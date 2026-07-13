@@ -21,7 +21,7 @@ import {
   LogOut,
   ChevronsUpDown,
 } from "lucide-react";
-import { DatasetSummary } from "@/core/types";
+import { DatasetSummary } from "@/features/datasets/types";
 import {
   Sidebar,
   SidebarHeader,
@@ -36,18 +36,18 @@ import {
   SidebarMenuAction,
   SidebarRail,
   SidebarTrigger,
-} from "@/components/ui/sidebar";
+} from "@/shared/ui/sidebar";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { ConfirmDialog } from "@/components/confirm-dialog";
-import { RenameDialog } from "@/components/rename-dialog";
-import { createClient } from "@/lib/supabase/client";
+} from "@/shared/ui/dropdown-menu";
+import { Avatar, AvatarFallback, AvatarImage } from "@/shared/ui/avatar";
+import { ConfirmDialog } from "@/shared/components/confirm-dialog";
+import { RenameDialog } from "@/shared/components/rename-dialog";
+import { createClient } from "@/shared/supabase/client";
 import type { ShellUser } from "./app-shell";
 
 const SRC_ICON: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -77,7 +77,7 @@ export function AppSidebar({
 
   const signOut = async () => {
     await createClient().auth.signOut();
-    router.push("/sign-in");
+    router.push("/auth/sign-in");
     router.refresh();
   };
 
@@ -88,7 +88,7 @@ export function AppSidebar({
   const remove = async (id: string, name: string) => {
     await fetch(`/api/datasets/${id}`, { method: "DELETE" });
     toast.success(`Deleted “${name}”`);
-    if (pathname === `/d/${id}`) router.push("/app");
+    if (pathname === `/app/datasets/${id}`) router.push("/app");
     router.refresh();
   };
 
@@ -146,12 +146,12 @@ export function AppSidebar({
               <SidebarMenuItem>
                 <SidebarMenuButton
                   asChild
-                  isActive={pathname === "/app/board"}
-                  tooltip="Kanban Board"
+                  isActive={pathname === "/app/tasks"}
+                  tooltip="Tasks"
                 >
-                  <Link href="/app/board">
+                  <Link href="/app/tasks">
                     <Kanban />
-                    <span>Kanban Board</span>
+                    <span>Tasks</span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
@@ -166,11 +166,11 @@ export function AppSidebar({
             <SidebarMenu>
               {datasets.map((d) => {
                 const Icon = SRC_ICON[d.source.kind] ?? Database;
-                const active = pathname === `/d/${d.id}`;
+                const active = pathname === `/app/datasets/${d.id}`;
                 return (
                   <SidebarMenuItem key={d.id}>
                     <SidebarMenuButton asChild isActive={active} tooltip={d.name}>
-                      <Link href={`/d/${d.id}`}>
+                      <Link href={`/app/datasets/${d.id}`}>
                         <Icon />
                         <span className="truncate">{d.name}</span>
                       </Link>
@@ -184,7 +184,7 @@ export function AppSidebar({
                       </DropdownMenuTrigger>
                       <DropdownMenuContent side="right" align="start" className="w-44">
                         <DropdownMenuItem asChild>
-                          <Link href={`/d/${d.id}`}>
+                          <Link href={`/app/datasets/${d.id}`}>
                             <ArrowUpRight className="text-muted-foreground" />
                             Open dataset
                           </Link>

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { store } from "@/storage/store";
-import { requireAuth } from "@/lib/supabase/server";
+import { store } from "@/features/datasets/storage/store";
+import { requireAuth } from "@/shared/supabase/server";
 
 export async function GET(_: NextRequest, { params }: { params: { id: string } }) {
   const denied = await requireAuth();

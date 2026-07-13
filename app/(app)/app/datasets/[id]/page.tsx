@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
-import { store } from "@/storage/store";
-import { Workspace } from "@/components/Workspace";
+import { store } from "@/features/datasets/storage/store";
+import { Workspace } from "@/features/datasets/components/Workspace";
 
 export const dynamic = "force-dynamic";
 

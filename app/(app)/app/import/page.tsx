@@ -1,6 +1,6 @@
 import { Suspense } from "react";
-import { store } from "@/storage/store";
-import { Home } from "@/components/Home";
+import { store } from "@/features/datasets/storage/store";
+import { Home } from "@/features/overview/components/Home";
 
 // The data page: upload / connect a source, and see existing datasets. The
 // greeting overview lives at /app; this is where "Import data" points.

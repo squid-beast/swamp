@@ -35,12 +35,12 @@ export async function middleware(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const path = request.nextUrl.pathname;
-  const inApp = path.startsWith("/app") || path.startsWith("/d/");
-  const inAuth = path === "/sign-in" || path === "/register";
+  const inApp = path.startsWith("/app");
+  const inAuth = path === "/auth/sign-in" || path === "/auth/register";
 
   if (!user && inApp) {
     const url = request.nextUrl.clone();
-    url.pathname = "/sign-in";
+    url.pathname = "/auth/sign-in";
     url.search = "";
     return NextResponse.redirect(url);
   }
@@ -54,5 +54,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/app/:path*", "/d/:path*", "/sign-in", "/register"],
+  matcher: ["/app/:path*", "/auth/sign-in", "/auth/register"],
 };

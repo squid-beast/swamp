@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
-import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
-import { TaskBoard } from "@/components/board/task-board";
+import { createClient, isSupabaseConfigured } from "@/shared/supabase/server";
+import { TaskBoard } from "@/features/task-board/components/task-board";
 
 // The task board reads/writes live via the browser Supabase client (RLS-scoped),
 // so this route only needs to gate access and hand off the owner id.
@@ -19,7 +19,7 @@ export default async function KanbanBoardPage() {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) redirect("/sign-in");
+  if (!user) redirect("/auth/sign-in");
 
   return <TaskBoard userId={user.id} />;
 }

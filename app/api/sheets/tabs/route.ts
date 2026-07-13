@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient, getUserId } from "@/lib/supabase/server";
-import { getAccessToken, listSheetTitles, parseSpreadsheetId, isGoogleConfigured } from "@/lib/google/sheets";
+import { createClient, getUserId } from "@/shared/supabase/server";
+import { getAccessToken, listSheetTitles, parseSpreadsheetId, isGoogleConfigured } from "@/features/sheets/google/sheets";
 
 // List a spreadsheet's tab titles for the connect flow.
 export async function POST(req: NextRequest) {

@@ -7,9 +7,9 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+} from "@/shared/ui/dialog";
+import { Button } from "@/shared/ui/button";
+import { Input } from "@/shared/ui/input";
 
 // Controlled rename dialog: prefilled input, Enter or Save commits a trimmed,
 // non-empty, changed name. Used from the dataset "…" menu.

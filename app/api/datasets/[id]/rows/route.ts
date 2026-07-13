@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { Row, RowPatch } from "@/core/types";
-import { store } from "@/storage/store";
-import { requireAuth } from "@/lib/supabase/server";
+import { Row, RowPatch } from "@/features/datasets/types";
+import { store } from "@/features/datasets/storage/store";
+import { requireAuth } from "@/shared/supabase/server";
 
 // Row-level writes. POST appends new rows; PATCH merges cell values into rows;
 // DELETE removes rows. All keep the field registry + overrides untouched, and

@@ -1,12 +1,12 @@
 "use client";
 import { Check, ChevronDown } from "lucide-react";
-import { FieldMeta } from "@/core/types";
+import { FieldMeta } from "@/features/datasets/types";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+} from "@/shared/ui/dropdown-menu";
 
 // Editable status / single-select cell. The value is colored text (no filled
 // background); click it to pick another option. The change persists.

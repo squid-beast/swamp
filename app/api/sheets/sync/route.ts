@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient, getUserId } from "@/lib/supabase/server";
-import { getAccessToken, readSheet } from "@/lib/google/sheets";
-import { sheetRowsToRows } from "@/lib/sheets/rows";
-import { store } from "@/storage/store";
+import { createClient, getUserId } from "@/shared/supabase/server";
+import { getAccessToken, readSheet } from "@/features/sheets/google/sheets";
+import { sheetRowsToRows } from "@/features/sheets/lib/rows";
+import { store } from "@/features/datasets/storage/store";
 
 // Manual "Sync now" — runs in the user's session, so RLS covers the write.
 // Appends sheet rows beyond what's already been ingested.

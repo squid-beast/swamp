@@ -4,18 +4,18 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Loader2, Check, ArrowRight } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Button } from "@/shared/ui/button";
+import { Input } from "@/shared/ui/input";
+import { Label } from "@/shared/ui/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
-import { createClient } from "@/lib/supabase/client";
-import { cn } from "@/lib/utils";
+} from "@/shared/ui/select";
+import { createClient } from "@/shared/supabase/client";
+import { cn } from "@/shared/lib/utils";
 
 type StepState = "done" | "active" | "todo";
 
@@ -104,7 +104,7 @@ export function ConnectPanel({ googleConnected }: { googleConnected: boolean }) 
     setBusy(false);
     if (!res.ok) return toast.error(json.error ?? "Could not connect the sheet");
     toast.success("Sheet connected");
-    router.push(`/d/${json.datasetId}`);
+    router.push(`/app/datasets/${json.datasetId}`);
     router.refresh();
   };
 

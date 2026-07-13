@@ -6,9 +6,9 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Button } from "@/shared/ui/button";
+import { Input } from "@/shared/ui/input";
+import { Checkbox } from "@/shared/ui/checkbox";
 import {
   Form,
   FormControl,
@@ -16,10 +16,10 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-} from "@/components/ui/form";
+} from "@/shared/ui/form";
 import { GoogleButton } from "./google-button";
-import { DateField } from "@/components/date-field";
-import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
+import { DateField } from "@/shared/components/date-field";
+import { createClient, isSupabaseConfigured } from "@/shared/supabase/client";
 
 const schema = z
   .object({

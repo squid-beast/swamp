@@ -4,12 +4,12 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Sparkles, Kanban, UploadCloud, LayoutGrid } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
-import type { Money } from "@/core/types";
-import { fmtUSD } from "@/lib/format";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { createClient } from "@/shared/supabase/client";
+import type { Money } from "@/features/datasets/types";
+import { fmtUSD } from "@/shared/lib/format";
+import { Button } from "@/shared/ui/button";
+import { Input } from "@/shared/ui/input";
+import { Label } from "@/shared/ui/label";
 import {
   Dialog,
   DialogContent,
@@ -17,8 +17,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { cn } from "@/lib/utils";
+} from "@/shared/ui/dialog";
+import { cn } from "@/shared/lib/utils";
 
 const SUBTITLES = [
   "Ready when you are.",

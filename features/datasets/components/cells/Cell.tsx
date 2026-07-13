@@ -1,8 +1,8 @@
 "use client";
-import { FieldMeta } from "@/core/types";
+import { FieldMeta } from "@/features/datasets/types";
 import { Check, Minus, ExternalLink, Mail, Phone, ChevronRight, MapPin } from "lucide-react";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { ExpandableText } from "./ExpandableText";
+import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/popover";
+import { ExpandableText } from "@/shared/ui/expandable-text";
 
 // ── The renderer. Input: metadata + value. It has no idea where data came from. ──
 

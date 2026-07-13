@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
-import { SignInForm } from "@/components/auth/sign-in-form";
+import { SignInForm } from "@/features/auth/components/sign-in-form";
 
 export const metadata: Metadata = { title: "Sign in — SWAMP" };
 
@@ -17,7 +17,7 @@ export default function SignInPage() {
       </Suspense>
       <p className="text-center text-[13px] text-muted-foreground">
         No account?{" "}
-        <Link href="/register" className="font-medium text-foreground hover:underline">
+        <Link href="/auth/register" className="font-medium text-foreground hover:underline">
           Create one
         </Link>
       </p>

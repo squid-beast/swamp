@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
-import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
-import { getMoney } from "@/lib/money";
-import { Overview } from "@/components/overview";
+import { createClient, isSupabaseConfigured } from "@/shared/supabase/server";
+import { getMoney } from "@/features/overview/money";
+import { Overview } from "@/features/overview/components/overview";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +14,7 @@ export default async function OverviewPage() {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) redirect("/sign-in");
+  if (!user) redirect("/auth/sign-in");
 
   // Resilient to migration 0004 not being applied yet: if the `onboarded` column
   // doesn't exist, fall back to name-only and suppress the onboarding flow.

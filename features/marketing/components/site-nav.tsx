@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { ThemeToggle } from "@/components/theme-toggle";
+import { Button } from "@/shared/ui/button";
+import { ThemeToggle } from "@/shared/components/theme-toggle";
 
 // Shared marketing/legal top nav.
 export function SiteNav() {

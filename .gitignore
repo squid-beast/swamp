@@ -34,11 +34,14 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# generated datasets — regenerate with: npm run seed
+# local file-store data (used only when Supabase isn't configured)
 /data
 
 # local editor / preview tooling
 /.claude
 .env.*
 
+# AI scratch notes are ignored, but keep project docs tracked
 *.md
+!README.md
+!ARCHITECTURE.md

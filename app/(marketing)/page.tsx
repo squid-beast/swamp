@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Landing } from "@/components/landing";
+import { Landing } from "@/features/marketing/components/landing";
 
 export const metadata: Metadata = {
   title: "SWAMP — yeet data in, UI comes out",

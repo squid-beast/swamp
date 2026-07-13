@@ -6,9 +6,9 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Button } from "@/shared/ui/button";
+import { Input } from "@/shared/ui/input";
+import { Label } from "@/shared/ui/label";
 import {
   Form,
   FormControl,
@@ -16,9 +16,9 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-} from "@/components/ui/form";
-import { DateField } from "@/components/date-field";
-import { createClient } from "@/lib/supabase/client";
+} from "@/shared/ui/form";
+import { DateField } from "@/shared/components/date-field";
+import { createClient } from "@/shared/supabase/client";
 
 const schema = z.object({
   firstName: z.string().min(1, "Required"),

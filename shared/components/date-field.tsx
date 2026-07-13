@@ -3,10 +3,10 @@
 import * as React from "react";
 import { format, parse, isValid } from "date-fns";
 import { CalendarDays } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Calendar } from "@/components/ui/calendar";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { cn } from "@/lib/utils";
+import { Button } from "@/shared/ui/button";
+import { Calendar } from "@/shared/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/popover";
+import { cn } from "@/shared/lib/utils";
 
 // String (yyyy-MM-dd) in / out, so it drops straight into the existing form
 // schemas. Uses the shadcn Calendar with month + year dropdowns. Forwards

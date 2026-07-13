@@ -3,15 +3,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
-import { DatasetSummary } from "@/core/types";
+import { DatasetSummary } from "@/features/datasets/types";
 import {
   UploadCloud, Trash2, Webhook, FileSpreadsheet, Braces, Database,
   Table2, Kanban, Images, Gauge, ArrowRight,
 } from "lucide-react";
-import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { ConfirmDialog } from "@/components/confirm-dialog";
-import { cn } from "@/lib/utils";
+import { Card } from "@/shared/ui/card";
+import { Button } from "@/shared/ui/button";
+import { ConfirmDialog } from "@/shared/components/confirm-dialog";
+import { cn } from "@/shared/lib/utils";
 
 const VIEW_ICON: Record<string, React.ReactNode> = {
   grid: <Table2 className="size-3" />, kanban: <Kanban className="size-3" />,
@@ -58,7 +58,7 @@ export function Home({ initial }: { initial: DatasetSummary[] }) {
       // Navigate first, then refresh so the shared (app) layout — which renders the
       // sidebar + overview dataset list — refetches and shows the new dataset without
       // a manual reload.
-      router.push(`/d/${json.id}`);
+      router.push(`/app/datasets/${json.id}`);
       router.refresh();
     },
     [router]
@@ -143,7 +143,7 @@ export function Home({ initial }: { initial: DatasetSummary[] }) {
               className="group relative flex min-h-[128px] flex-col p-4 transition-colors hover:border-brand/40"
               style={{ animationDelay: `${i * 40}ms` }}
             >
-              <Link href={`/d/${d.id}`} className="flex flex-1 flex-col gap-3">
+              <Link href={`/app/datasets/${d.id}`} className="flex flex-1 flex-col gap-3">
                 <div className="flex items-start gap-3">
                   <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
                     {SRC_ICON[d.source.kind] ?? <Database className="size-4" />}

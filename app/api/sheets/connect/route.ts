@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient, getUserId } from "@/lib/supabase/server";
-import { getAccessToken, readSheet, isGoogleConfigured } from "@/lib/google/sheets";
-import { ingest } from "@/engine/import";
-import { store } from "@/storage/store";
+import { createClient, getUserId } from "@/shared/supabase/server";
+import { getAccessToken, readSheet, isGoogleConfigured } from "@/features/sheets/google/sheets";
+import { ingest } from "@/features/datasets/engine/import";
+import { store } from "@/features/datasets/storage/store";
 
 // Create a connection: read the sheet now, infer types, create the dataset +
 // rows, and record the connection so it can be synced later.

@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
-import { Dataset, DatasetSummary, FieldOverride, Row, RowPatch, ViewConfig } from "@/core/types";
-import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
+import { Dataset, DatasetSummary, FieldOverride, Row, RowPatch, ViewConfig } from "@/features/datasets/types";
+import { createClient, isSupabaseConfigured } from "@/shared/supabase/server";
 
 // ── StorageAdapter: swap FileStore for SupabaseStore in the morning without
 //    touching any route or component. Same method signatures. ──

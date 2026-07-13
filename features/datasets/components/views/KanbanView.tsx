@@ -1,8 +1,8 @@
 "use client";
 import { useMemo, useState } from "react";
-import { FieldMeta, Row, ViewConfig } from "@/core/types";
+import { FieldMeta, Row, ViewConfig } from "@/features/datasets/types";
 import { Cell } from "../cells/Cell";
-import { cn } from "@/lib/utils";
+import { cn } from "@/shared/lib/utils";
 
 export function KanbanView({
   fields,

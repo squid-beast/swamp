@@ -11,8 +11,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
-import { cn } from "@/lib/utils";
+} from "@/shared/ui/alert-dialog";
+import { cn } from "@/shared/lib/utils";
 
 // Reusable confirmation. Two shapes:
 //  • trigger-wrapped:  <ConfirmDialog trigger={<Button/>} … />

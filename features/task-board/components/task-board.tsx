@@ -11,8 +11,8 @@ import {
   Loader2,
   ChevronDown,
 } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
-import { Button } from "@/components/ui/button";
+import { createClient } from "@/shared/supabase/client";
+import { Button } from "@/shared/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,12 +20,12 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { ConfirmDialog } from "@/components/confirm-dialog";
-import { RenameDialog } from "@/components/rename-dialog";
+} from "@/shared/ui/dropdown-menu";
+import { ConfirmDialog } from "@/shared/components/confirm-dialog";
+import { RenameDialog } from "@/shared/components/rename-dialog";
 import { TaskCardDialog, type CardDraft } from "./task-card-dialog";
-import { ExpandableText } from "@/components/cells/ExpandableText";
-import { cn } from "@/lib/utils";
+import { ExpandableText } from "@/shared/ui/expandable-text";
+import { cn } from "@/shared/lib/utils";
 
 type Board = { id: string; name: string };
 type Column = { id: string; name: string; position: number };

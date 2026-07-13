@@ -2,8 +2,8 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
-import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
+import { Button } from "@/shared/ui/button";
+import { createClient, isSupabaseConfigured } from "@/shared/supabase/client";
 
 export function GoogleButton({ label = "Continue with Google" }: { label?: string }) {
   const [loading, setLoading] = React.useState(false);
