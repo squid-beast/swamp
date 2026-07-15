@@ -1,12 +1,12 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Sparkles, Kanban, UploadCloud, LayoutGrid } from "lucide-react";
+import { Database, Sparkles, Table2, UploadCloud } from "lucide-react";
 import { createClient } from "@/shared/supabase/client";
-import type { Money } from "@/features/datasets/types";
-import { fmtUSD } from "@/shared/lib/format";
+import type { NavBase } from "@/features/tables/nav";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 import { Label } from "@/shared/ui/label";
@@ -20,15 +20,17 @@ import {
 } from "@/shared/ui/dialog";
 import { cn } from "@/shared/lib/utils";
 
+// The workspace home: a greeting and your bases.
+//
+// Everything that used to be here — the money card, the Stripe balance, the agent
+// metrics — belonged to a personal CRM bolted onto the side of the app. It's gone.
+
 const SUBTITLES = [
   "Ready when you are.",
-  "Coffee first, then chaos.",
-  "Note it down before it slips.",
   "A calm home for messy data.",
   "What are we untangling today?",
-  "Dump it in, get a UI.",
+  "Dump it in, get a table.",
   "Small steps, big swamp.",
-  "Let's make something out of the mess.",
 ];
 
 function greetWord(): string {
@@ -41,95 +43,115 @@ export function Overview({
   firstName,
   userId,
   needsProfile,
-  onboarded,
-  money,
+  bases,
 }: {
   firstName: string;
   userId: string;
   needsProfile: boolean;
-  onboarded: boolean;
-  money?: Money | null;
+  bases: NavBase[];
 }) {
   const router = useRouter();
   const [name, setName] = React.useState(firstName);
   const [mounted, setMounted] = React.useState(false);
   const [sub, setSub] = React.useState("");
   const [profileOpen, setProfileOpen] = React.useState(needsProfile);
-  const [onboardOpen, setOnboardOpen] = React.useState(!needsProfile && !onboarded);
 
-  // Greeting is time-of-day + local, so compute it on the client after mount to
-  // avoid a server/client (timezone) mismatch; fade it in.
+  // The greeting is time-of-day and therefore local. Computing it on the server
+  // means a user in Sydney gets told "Good evening" at 9am — so compute it after
+  // mount and fade it in.
   React.useEffect(() => {
     setMounted(true);
     setSub(SUBTITLES[Math.floor(Math.random() * SUBTITLES.length)]);
   }, []);
 
-  const onProfileDone = (first: string) => {
-    setName(first);
-    setProfileOpen(false);
-    if (!onboarded) setOnboardOpen(true);
-    router.refresh(); // update the sidebar/header name
-  };
-
-  const closeOnboarding = React.useCallback(() => {
-    setOnboardOpen(false);
-    void createClient().from("profiles").update({ onboarded: true }).eq("id", userId);
-  }, [userId]);
-
   const hello = mounted ? `${greetWord()}${name ? `, ${name}` : ""}` : "";
+  const empty = bases.length === 0;
 
   return (
-    <main className="flex min-h-[calc(100vh-9rem)] flex-col items-center justify-center p-6 text-center">
+    <main className="mx-auto w-full max-w-3xl p-6">
       <div
         className={cn(
-          "flex flex-col items-center gap-2.5 transition-opacity duration-500",
+          "flex flex-col gap-1 transition-opacity duration-500",
           mounted ? "opacity-100" : "opacity-0"
         )}
       >
-        <h1 className="font-display text-3xl font-extrabold tracking-tight md:text-4xl">{hello}</h1>
-        <p className="text-[15px] text-muted-foreground">{sub}</p>
+        <h1 className="font-display text-2xl font-extrabold tracking-tight md:text-3xl">
+          {hello}
+        </h1>
+        <p className="text-[14px] text-muted-foreground">{sub}</p>
       </div>
 
-      {money && (
-        <div
-          className={cn(
-            "mt-8 w-full max-w-md transition-opacity duration-700",
-            mounted ? "opacity-100" : "opacity-0"
-          )}
-        >
-          <div className="grid grid-cols-3 divide-x divide-border/70 overflow-hidden rounded-xl border border-border/70 bg-card/50 text-left">
-            <MoneyStat label="Balance" value={fmtUSD(money.balance)} />
-            <MoneyStat label="This month" value={fmtUSD(money.revenueMtd)} />
-            <MoneyStat label="Pipeline" value={fmtUSD(money.pipelineValue)} />
-          </div>
-          {money.pipelineCounts && (
-            <p className="mt-2 text-[12px] tabular-nums text-muted-foreground">{money.pipelineCounts}</p>
-          )}
-          {money.topAction && (
-            <p className="mx-auto mt-3 max-w-sm text-[13px] leading-relaxed text-muted-foreground">
-              <span className="font-medium text-foreground">💰 Next money move:</span>{" "}
-              {money.topAction}
-            </p>
-          )}
+      {empty ? (
+        <div className="mt-10 flex flex-col items-center gap-3 rounded-xl border border-dashed px-6 py-12 text-center">
+          <Sparkles className="size-6 text-brand" />
+          <p className="text-[14px] font-medium">No bases yet</p>
+          <p className="max-w-sm text-[13px] text-muted-foreground">
+            Import a CSV, Excel file or JSON payload. SWAMP types every column and
+            gives you a table.
+          </p>
+          <Button asChild className="mt-1 gap-2">
+            <Link href="/app/import">
+              <UploadCloud className="size-3.5" />
+              Import data
+            </Link>
+          </Button>
+        </div>
+      ) : (
+        <div className="mt-8 grid gap-3 sm:grid-cols-2">
+          {bases.map((base) => (
+            <div key={base.id} className="rounded-xl border p-4">
+              <div className="flex items-center gap-2">
+                <Database className="size-4 text-brand" />
+                <h2 className="truncate font-medium">{base.name}</h2>
+                <span className="ml-auto text-[11px] tabular-nums text-muted-foreground">
+                  {base.tables.length} {base.tables.length === 1 ? "table" : "tables"}
+                </span>
+              </div>
+
+              <div className="mt-3 flex flex-col gap-0.5">
+                {base.tables.slice(0, 5).map((t) => (
+                  <Link
+                    key={t.id}
+                    href={`/app/t/${t.id}`}
+                    className="flex items-center gap-2 rounded px-1.5 py-1 text-[13px] hover:bg-muted"
+                  >
+                    <Table2 className="size-3.5 text-muted-foreground" />
+                    <span className="truncate">{t.name}</span>
+                  </Link>
+                ))}
+                {base.tables.length === 0 && (
+                  <p className="px-1.5 py-1 text-[12px] text-muted-foreground">
+                    No tables yet
+                  </p>
+                )}
+              </div>
+
+              <Button asChild variant="ghost" size="sm" className="mt-2 gap-1.5">
+                <Link href={`/app/import?baseId=${base.id}`}>
+                  <UploadCloud className="size-3.5" />
+                  Add a table
+                </Link>
+              </Button>
+            </div>
+          ))}
         </div>
       )}
 
-      <ProfileGate open={profileOpen} userId={userId} onDone={onProfileDone} />
-      <OnboardingDialog open={onboardOpen} onClose={closeOnboarding} />
+      <ProfileGate
+        open={profileOpen}
+        userId={userId}
+        onDone={(first) => {
+          setName(first);
+          setProfileOpen(false);
+          router.refresh();
+        }}
+      />
     </main>
   );
 }
 
-function MoneyStat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex flex-col gap-0.5 px-4 py-3">
-      <span className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</span>
-      <span className="font-display text-lg font-extrabold tabular-nums">{value}</span>
-    </div>
-  );
-}
-
-// Blocking: no close button, can't dismiss until a name is entered.
+// Blocking: no close button. SWAMP addresses you by name everywhere, and an app
+// that calls you "there" is worse than one that asks once.
 function ProfileGate({
   open,
   userId,
@@ -147,12 +169,14 @@ function ProfileGate({
   const save = async () => {
     if (!canSave || saving) return;
     setSaving(true);
+
     const { error } = await createClient().from("profiles").upsert({
       id: userId,
       first_name: first.trim(),
       last_name: last.trim(),
       updated_at: new Date().toISOString(),
     });
+
     setSaving(false);
     if (error) return toast.error(error.message);
     onDone(first.trim());
@@ -169,6 +193,7 @@ function ProfileGate({
           <DialogTitle>Complete your profile</DialogTitle>
           <DialogDescription>Add your name so SWAMP can greet you properly.</DialogDescription>
         </DialogHeader>
+
         <div className="grid grid-cols-2 gap-3">
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="pg-first" className="text-[12px] text-muted-foreground">
@@ -194,87 +219,11 @@ function ProfileGate({
             />
           </div>
         </div>
+
         <DialogFooter>
           <Button onClick={save} disabled={!canSave || saving}>
             {saving ? "Saving…" : "Continue"}
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-const STEPS = [
-  {
-    icon: Sparkles,
-    title: "Welcome to SWAMP",
-    body: "A calm home for your tasks and data. Here's the 20-second tour.",
-  },
-  {
-    icon: Kanban,
-    title: "Track work on boards",
-    body: "Open the Kanban Board to create columns and cards — plan tasks and drag them across stages.",
-  },
-  {
-    icon: UploadCloud,
-    title: "Turn data into a UI",
-    body: "Import a CSV or Excel file, or connect a Google Sheet — SWAMP types every column and builds the views for you.",
-  },
-  {
-    icon: LayoutGrid,
-    title: "You're all set",
-    body: "Your datasets and boards live in the sidebar. Jump in whenever you like.",
-  },
-];
-
-function OnboardingDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [i, setI] = React.useState(0);
-  const step = STEPS[i];
-  const last = i === STEPS.length - 1;
-
-  return (
-    <Dialog
-      open={open}
-      onOpenChange={(o) => {
-        if (!o) onClose();
-      }}
-    >
-      <DialogContent className="sm:max-w-md">
-        <div className="flex flex-col items-center gap-3 pt-2 text-center">
-          <div className="flex size-12 items-center justify-center rounded-xl bg-brand/10 text-brand">
-            <step.icon className="size-6" />
-          </div>
-          <DialogTitle className="text-center">{step.title}</DialogTitle>
-          <DialogDescription className="text-center">{step.body}</DialogDescription>
-        </div>
-        <div className="flex justify-center gap-1.5 py-1">
-          {STEPS.map((_, j) => (
-            <span
-              key={j}
-              className={cn("size-1.5 rounded-full transition-colors", j === i ? "bg-brand" : "bg-muted")}
-            />
-          ))}
-        </div>
-        <DialogFooter className="sm:justify-between">
-          <Button variant="ghost" size="sm" onClick={onClose} className="text-muted-foreground">
-            Skip
-          </Button>
-          <div className="flex gap-2">
-            {i > 0 && (
-              <Button variant="outline" size="sm" onClick={() => setI(i - 1)}>
-                Back
-              </Button>
-            )}
-            {last ? (
-              <Button size="sm" onClick={onClose}>
-                Get started
-              </Button>
-            ) : (
-              <Button size="sm" onClick={() => setI(i + 1)}>
-                Next
-              </Button>
-            )}
-          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

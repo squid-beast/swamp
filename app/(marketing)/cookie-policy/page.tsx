@@ -1,13 +1,19 @@
-import type { Metadata } from "next";
 import { LegalPage } from "@/features/marketing/components/legal-page";
+import { pageMeta } from "@/shared/seo/metadata";
 
-export const metadata: Metadata = { title: "Cookie Policy — SWAMP" };
+export const metadata = pageMeta({
+  title: "Cookie Policy",
+  description:
+    "SWAMP uses a small number of cookies to keep you signed in and remember preferences. No advertising trackers.",
+  path: "/cookie-policy",
+});
 
 export default function CookiePolicyPage() {
   return (
     <LegalPage
       title="Cookie Policy"
       updated="July 2026"
+      path="/cookie-policy"
       intro="SWAMP uses a small number of cookies to keep you signed in and to remember preferences."
       sections={[
         {
@@ -20,11 +26,11 @@ export default function CookiePolicyPage() {
         },
         {
           heading: "No ad tracking",
-          body: "We do not use advertising or cross-site tracking cookies.",
+          body: "We set no advertising or cross-site tracking cookies. If we ever add privacy-friendly analytics, they stay off until you allow them in Cookie settings.",
         },
         {
           heading: "Managing cookies",
-          body: "You can clear cookies from your browser at any time. Removing the session cookie signs you out.",
+          body: "Use “Cookie settings” in the footer to change your choices at any time. You can also clear cookies from your browser; removing the session cookie signs you out.",
         },
       ]}
     />

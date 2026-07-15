@@ -1,25 +1,39 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, getUserId } from "@/shared/supabase/server";
-import { getAccessToken, readSheet } from "@/features/sheets/google/sheets";
-import { sheetRowsToRows } from "@/features/sheets/lib/rows";
-import { store } from "@/features/datasets/storage/store";
+import { getAccessToken, readSheet, isGoogleConfigured } from "@/features/sheets/google/sheets";
+import { syncSheetToTable, type SheetField } from "@/features/sheets/sync-service";
+import { getTable, listFields } from "@/features/tables/repo";
 
-// Manual "Sync now" — runs in the user's session, so RLS covers the write.
-// Appends sheet rows beyond what's already been ingested.
+// Re-sync a connected sheet.
+//
+// Reconciles: new rows insert, changed rows update, removed rows soft-delete.
+// The old implementation only appended rows past a high-water mark — an edit in
+// the sheet never reached SWAMP, and a deletion never did either. It looked fine
+// and was quietly wrong.
+
+export const dynamic = "force-dynamic";
+export const maxDuration = 60;
+
 export async function POST(req: NextRequest) {
   const userId = await getUserId();
   if (!userId) return NextResponse.json({ error: "Sign in required" }, { status: 401 });
+  if (!isGoogleConfigured) {
+    return NextResponse.json({ error: "Google Sheets isn't configured." }, { status: 400 });
+  }
 
-  const { datasetId } = await req.json();
-  if (!datasetId) return NextResponse.json({ error: "Missing datasetId" }, { status: 400 });
+  const { tableId } = await req.json();
+  if (!tableId) return NextResponse.json({ error: "Missing tableId" }, { status: 400 });
 
   const supabase = createClient();
+
   const { data: conn } = await supabase
     .from("sheet_connections")
-    .select("*")
-    .eq("dataset_id", datasetId)
+    .select("id, spreadsheet_id, sheet_title")
+    .eq("table_id", tableId)
     .maybeSingle();
-  if (!conn) return NextResponse.json({ error: "This dataset has no sheet connection." }, { status: 404 });
+  if (!conn) {
+    return NextResponse.json({ error: "This table has no sheet connection." }, { status: 404 });
+  }
 
   const { data: cred } = await supabase
     .from("google_credentials")
@@ -30,35 +44,42 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Reconnect your Google account." }, { status: 400 });
   }
 
-  const ds = await store.get(datasetId);
-  if (!ds) return NextResponse.json({ error: "not found" }, { status: 404 });
-
   try {
+    const table = await getTable(tableId);
+    if (!table) return NextResponse.json({ error: "not found" }, { status: 404 });
+
+    const fields = await listFields(tableId);
     const token = await getAccessToken(cred.refresh_token);
-    const table = await readSheet(token, conn.spreadsheet_id, conn.sheet_title);
-    const total = table.rows.length;
-    if (total <= conn.last_row_count) {
-      return NextResponse.json({ added: 0, total });
-    }
-    const newSheetRows = table.rows.slice(conn.last_row_count);
-    const newRows = sheetRowsToRows(ds.fields, newSheetRows, conn.last_row_count);
-    const payload = newRows.map((r, i) => {
-      const { __id, ...data } = r;
-      return { dataset_id: datasetId, row_id: __id, ord: conn.last_row_count + i, data };
-    });
-    const { error: insErr } = await supabase
-      .from("dataset_rows")
-      .upsert(payload, { onConflict: "dataset_id,row_id", ignoreDuplicates: true });
-    if (insErr) throw insErr;
-    await supabase
-      .from("datasets")
-      .update({ row_count: total, updated_at: new Date().toISOString() })
-      .eq("id", datasetId);
+    const sheet = await readSheet(token, conn.spreadsheet_id, conn.sheet_title);
+
+    // Match sheet columns to fields by the header they came from. A field renamed
+    // in SWAMP still tracks the same sheet column — which is the entire point of
+    // `key` being stable while `name` is free.
+    const mapped: SheetField[] = fields.map((f) => ({
+      key: f.key,
+      sourceName:
+        sheet.columns.find(
+          (c) =>
+            c === f.name ||
+            c.toLowerCase().replace(/[_-]+/g, " ") === f.name.toLowerCase()
+        ) ?? f.name,
+      type: f.type,
+    }));
+
+    const result = await syncSheetToTable(
+      supabase,
+      tableId,
+      table.baseId,
+      mapped,
+      sheet.rows as Record<string, string>[]
+    );
+
     await supabase
       .from("sheet_connections")
-      .update({ last_row_count: total, last_synced_at: new Date().toISOString() })
+      .update({ last_synced_at: new Date().toISOString() })
       .eq("id", conn.id);
-    return NextResponse.json({ added: newRows.length, total });
+
+    return NextResponse.json(result);
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 502 });
   }

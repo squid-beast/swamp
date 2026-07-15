@@ -5,6 +5,10 @@
 
 # testing
 /coverage
+/playwright-report
+/test-results
+/blob-report
+/playwright/.cache
 
 # next.js
 /.next/
@@ -12,10 +16,13 @@
 
 # production
 /build
+/dist
 
 # misc
 .DS_Store
+Thumbs.db
 *.pem
+*.key
 
 # debug
 npm-debug.log*
@@ -23,9 +30,15 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# local env files
-.env*.local
+# local env files — never commit secrets
 .env
+.env*.local
+.env.*
+
+# ...but DO track the one env template. It holds only placeholders, and a repo
+# without it is a repo nobody can configure from a fresh clone. The broad .env.*
+# above would otherwise swallow it.
+!.env.example
 
 # vercel
 .vercel
@@ -34,14 +47,26 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# local file-store data (used only when Supabase isn't configured)
-/data
-
-# local editor / preview tooling
+# local editor / AI tooling
 /.claude
-.env.*
+/.cursor
+.idea/
+.vscode/
+*.swp
+*~
 
-# AI scratch notes are ignored, but keep project docs tracked
-*.md
-!README.md
-!ARCHITECTURE.md
+# supabase local stack (also listed under supabase/.gitignore)
+/supabase/.branches
+/supabase/.temp
+
+# vitest
+.vitest/
+
+# ── Markdown ──────────────────────────────────────────────────────────────────
+# Scratch notes at the repo root are ignored; real project docs are tracked.
+# Everything under docs/ and tests/ is a deliverable — do not re-ignore it.
+/*.md
+!/README.md
+!/ARCHITECTURE.md
+!docs/**
+!tests/**

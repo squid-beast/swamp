@@ -1,13 +1,19 @@
-import type { Metadata } from "next";
 import { LegalPage } from "@/features/marketing/components/legal-page";
+import { pageMeta } from "@/shared/seo/metadata";
 
-export const metadata: Metadata = { title: "Terms of Use — SWAMP" };
+export const metadata = pageMeta({
+  title: "Terms of Use",
+  description:
+    "The terms that govern your use of SWAMP. Plain-language, and honest that it's a young beta.",
+  path: "/terms",
+});
 
 export default function TermsPage() {
   return (
     <LegalPage
       title="Terms of Use"
       updated="July 2026"
+      path="/terms"
       intro="These terms govern your use of SWAMP. By creating an account or using the service, you agree to them."
       sections={[
         {
@@ -32,7 +38,7 @@ export default function TermsPage() {
         },
         {
           heading: "Contact",
-          body: "Questions about these terms can be sent to hello@swamp.app.",
+          body: "Questions about these terms can be sent to hello@swampy.app.",
         },
       ]}
     />

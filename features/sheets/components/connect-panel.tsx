@@ -104,7 +104,7 @@ export function ConnectPanel({ googleConnected }: { googleConnected: boolean }) 
     setBusy(false);
     if (!res.ok) return toast.error(json.error ?? "Could not connect the sheet");
     toast.success("Sheet connected");
-    router.push(`/app/datasets/${json.datasetId}`);
+    router.push(`/app/t/${json.tableId}`);
     router.refresh();
   };
 
@@ -169,7 +169,7 @@ export function ConnectPanel({ googleConnected }: { googleConnected: boolean }) 
       </Step>
 
       {/* Step 3 — pick a tab and create */}
-      <Step n={3} title="Choose a tab and create the dataset" state={step3State} last>
+      <Step n={3} title="Choose a tab and create the table" state={step3State} last>
         {tabs ? (
           <div className="flex flex-col gap-2.5">
             <div className="flex flex-col gap-1.5">
@@ -191,7 +191,7 @@ export function ConnectPanel({ googleConnected }: { googleConnected: boolean }) 
             </div>
             <Button onClick={create} disabled={busy !== false || !tab} className="w-fit gap-2">
               {busy === "create" && <Loader2 className="size-4 animate-spin" />}
-              Create dataset
+              Create table
               <ArrowRight className="size-4" />
             </Button>
             <p className="text-[12px] text-muted-foreground">

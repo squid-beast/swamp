@@ -1,18 +1,10 @@
 import { redirect } from "next/navigation";
-import { createClient, isSupabaseConfigured } from "@/shared/supabase/server";
+import { createClient } from "@/shared/supabase/server";
 import { ProfileForm } from "@/features/auth/components/profile-form";
 
 export const dynamic = "force-dynamic";
 
 export default async function ProfilePage() {
-  if (!isSupabaseConfigured) {
-    return (
-      <div className="mx-auto w-full max-w-lg p-4 text-sm text-muted-foreground md:p-6">
-        Profiles need Supabase. Add your keys to enable accounts.
-      </div>
-    );
-  }
-
   const supabase = createClient();
   const {
     data: { user },

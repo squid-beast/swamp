@@ -3,16 +3,12 @@
 import * as React from "react";
 import { toast } from "sonner";
 import { Button } from "@/shared/ui/button";
-import { createClient, isSupabaseConfigured } from "@/shared/supabase/client";
+import { createClient } from "@/shared/supabase/client";
 
 export function GoogleButton({ label = "Continue with Google" }: { label?: string }) {
   const [loading, setLoading] = React.useState(false);
 
   const onClick = async () => {
-    if (!isSupabaseConfigured) {
-      toast.error("Google sign-in isn't configured yet — add your Supabase keys.");
-      return;
-    }
     setLoading(true);
     const supabase = createClient();
     const { error } = await supabase.auth.signInWithOAuth({

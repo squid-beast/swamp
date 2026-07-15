@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -17,7 +18,7 @@ import {
   FormMessage,
 } from "@/shared/ui/form";
 import { GoogleButton } from "./google-button";
-import { createClient, isSupabaseConfigured } from "@/shared/supabase/client";
+import { createClient } from "@/shared/supabase/client";
 
 const schema = z.object({
   email: z.string().email("Enter a valid email"),
@@ -33,10 +34,6 @@ export function SignInForm() {
   });
 
   async function onSubmit(values: z.infer<typeof schema>) {
-    if (!isSupabaseConfigured) {
-      toast.error("Auth isn't configured yet — add your Supabase keys.");
-      return;
-    }
     setLoading(true);
     const supabase = createClient();
     const { error } = await supabase.auth.signInWithPassword(values);
@@ -72,7 +69,15 @@ export function SignInForm() {
             name="password"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Password</FormLabel>
+                <div className="flex items-center justify-between">
+                  <FormLabel>Password</FormLabel>
+                  <Link
+                    href="/auth/forgot-password"
+                    className="text-[12px] text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    Forgot?
+                  </Link>
+                </div>
                 <FormControl>
                   <Input type="password" autoComplete="current-password" {...field} />
                 </FormControl>

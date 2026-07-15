@@ -1,10 +1,13 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import { Bricolage_Grotesque, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { cn } from "@/shared/lib/utils";
 import { ThemeProvider } from "@/shared/components/theme-provider";
 import { Toaster } from "@/shared/ui/sonner";
+import { CookieConsent } from "@/features/marketing/components/cookie-consent";
+import { SITE } from "@/shared/seo/site";
+import { JsonLd, organizationSchema, websiteSchema } from "@/shared/seo/jsonld";
 
 // Body: Selawik, bundled OFL woff2 locally. Fallback "Segoe UI", system-ui.
 const selawik = localFont({
@@ -32,8 +35,48 @@ const mono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "SWAMP — dump any data, get a UI",
-  description: "Dump webhooks, JSON, CSV, and spreadsheets into the SWAMP. It types every column and builds the UI.",
+  // Without metadataBase, every relative URL Next generates — canonical, og:image,
+  // og:url — resolves against localhost. In production that means a canonical tag
+  // pointing at a machine that doesn't exist, and a link that renders as a grey
+  // box in Slack. It is the single most common Next.js SEO bug.
+  metadataBase: new URL(SITE.url),
+
+  title: {
+    default: `${SITE.name} — ${SITE.tagline}`,
+    // Every page sets a bare title; this appends the brand. One rule, no page can
+    // forget it, and no page double-appends it either.
+    template: `%s — ${SITE.name}`,
+  },
+
+  description: SITE.description,
+  applicationName: SITE.name,
+  referrer: "origin-when-cross-origin",
+
+  // What a person would actually type to find this. Not a keyword-stuffing tag —
+  // Google ignores it — but Bing and a few crawlers still read it, and it costs
+  // one line.
+  keywords: [
+    "collaborative database",
+    "shared database for teams",
+    "spreadsheet database",
+    "Airtable alternative",
+    "no-code database",
+    "team workspace",
+  ],
+
+  authors: [{ name: "Lohith Kumar Neerukonda", url: `${SITE.url}/about` }],
+  creator: "Lohith Kumar Neerukonda",
+
+  formatDetection: { telephone: false, address: false, email: false },
+};
+
+// Tells the browser which colour to paint the chrome. Two values, because the app
+// is dark by default but honours the system setting.
+export const viewport: Viewport = {
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
+    { media: "(prefers-color-scheme: dark)", color: "#0b0f0e" },
+  ],
 };
 
 export default function RootLayout({
@@ -47,6 +90,12 @@ export default function RootLayout({
       suppressHydrationWarning
       className={cn(selawik.variable, display.variable, mono.variable)}
     >
+      <head>
+        {/* Site-wide, so every page carries it. The per-page schemas (breadcrumbs,
+            FAQ, the product itself) are added by the pages that earn them. */}
+        <JsonLd data={organizationSchema()} />
+        <JsonLd data={websiteSchema()} />
+      </head>
       <body className="min-h-screen font-sans antialiased">
         <ThemeProvider
           attribute="class"
@@ -56,6 +105,7 @@ export default function RootLayout({
         >
           {children}
           <Toaster position="bottom-right" />
+          <CookieConsent />
         </ThemeProvider>
       </body>
     </html>

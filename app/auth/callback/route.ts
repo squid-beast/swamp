@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient, isSupabaseConfigured } from "@/shared/supabase/server";
+import { createClient } from "@/shared/supabase/server";
 
 // OAuth (Google) + email-confirmation return. Exchanges the code for a session,
 // captures the Google refresh token (for offline Sheets reads) when present,
@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
   const code = searchParams.get("code");
   const next = searchParams.get("next") ?? "/app";
 
-  if (code && isSupabaseConfigured) {
+  if (code) {
     const supabase = createClient();
     const { data, error } = await supabase.auth.exchangeCodeForSession(code);
     if (error) {

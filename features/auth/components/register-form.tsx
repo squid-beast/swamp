@@ -19,7 +19,7 @@ import {
 } from "@/shared/ui/form";
 import { GoogleButton } from "./google-button";
 import { DateField } from "@/shared/components/date-field";
-import { createClient, isSupabaseConfigured } from "@/shared/supabase/client";
+import { createClient } from "@/shared/supabase/client";
 
 const schema = z
   .object({
@@ -57,10 +57,6 @@ export function RegisterForm() {
   });
 
   async function onSubmit(values: z.infer<typeof schema>) {
-    if (!isSupabaseConfigured) {
-      toast.error("Auth isn't configured yet — add your Supabase keys.");
-      return;
-    }
     setLoading(true);
     const supabase = createClient();
     const { data, error } = await supabase.auth.signUp({

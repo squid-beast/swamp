@@ -1,18 +1,10 @@
 import { redirect } from "next/navigation";
-import { createClient, isSupabaseConfigured } from "@/shared/supabase/server";
+import { createClient } from "@/shared/supabase/server";
 import { ConnectPanel } from "@/features/sheets/components/connect-panel";
 
 export const dynamic = "force-dynamic";
 
 export default async function ConnectPage() {
-  if (!isSupabaseConfigured) {
-    return (
-      <div className="mx-auto w-full max-w-lg p-4 text-sm text-muted-foreground md:p-6">
-        Connecting a Google Sheet needs Supabase. Add your keys to enable it.
-      </div>
-    );
-  }
-
   const supabase = createClient();
   const {
     data: { user },

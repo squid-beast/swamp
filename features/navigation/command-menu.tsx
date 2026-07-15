@@ -1,23 +1,10 @@
 "use client";
 
 import * as React from "react";
-import { useRouter, usePathname } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
-import {
-  Webhook,
-  FileSpreadsheet,
-  Braces,
-  Database,
-  Table2,
-  Kanban,
-  Images,
-  Gauge,
-  LayoutDashboard,
-  Plus,
-  SunMoon,
-  Home,
-} from "lucide-react";
-import { DatasetSummary, ViewType } from "@/features/datasets/types";
+import { Database, SunMoon, Table2, UploadCloud, UserRound } from "lucide-react";
+import type { NavBase } from "@/features/tables/nav";
 import {
   CommandDialog,
   CommandInput,
@@ -26,116 +13,104 @@ import {
   CommandGroup,
   CommandItem,
   CommandSeparator,
-  CommandShortcut,
 } from "@/shared/ui/command";
 
-const SRC_ICON: Record<string, React.ComponentType<{ className?: string }>> = {
-  csv: FileSpreadsheet,
-  xlsx: FileSpreadsheet,
-  json: Braces,
-  webhook: Webhook,
-  sheet: FileSpreadsheet,
-};
-
-const VIEW_META: Record<ViewType, { label: string; icon: React.ComponentType<{ className?: string }> }> = {
-  grid: { label: "Grid", icon: Table2 },
-  kanban: { label: "Board", icon: Kanban },
-  gallery: { label: "Gallery", icon: Images },
-  dashboard: { label: "Dashboard", icon: Gauge },
-};
+// ⌘K. Jump to any table without walking the tree.
+//
+// Tables carry their base name as a suffix rather than being grouped under it:
+// two bases can each have a "Contacts" table, and a flat list that doesn't tell
+// you which one you're picking is a list you can't use.
 
 export function CommandMenu({
-  datasets,
+  bases,
   open,
   onOpenChange,
 }: {
-  datasets: DatasetSummary[];
+  bases: NavBase[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
   const router = useRouter();
-  const pathname = usePathname();
   const { setTheme, resolvedTheme } = useTheme();
 
-  const go = (href: string) => {
-    onOpenChange(false);
-    router.push(href);
-  };
+  const go = React.useCallback(
+    (href: string) => {
+      onOpenChange(false);
+      router.push(href);
+    },
+    [onOpenChange, router]
+  );
 
-  const current = datasets.find((d) => pathname === `/app/datasets/${d.id}`);
+  const tables = bases.flatMap((b) =>
+    b.tables.map((t) => ({ ...t, baseName: b.name }))
+  );
 
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange}>
-      <CommandInput placeholder="Search datasets, views, actions…" />
+      <CommandInput placeholder="Search tables and actions…" />
       <CommandList>
-        <CommandEmpty>No results found.</CommandEmpty>
+        <CommandEmpty>Nothing found.</CommandEmpty>
 
-        {current && (
+        {tables.length > 0 && (
+          <CommandGroup heading="Tables">
+            {tables.map((t) => (
+              <CommandItem
+                key={t.id}
+                // The base name is part of the search value, so typing "crm cont"
+                // finds Contacts inside the CRM base.
+                value={`${t.name} ${t.baseName}`}
+                onSelect={() => go(`/app/t/${t.id}`)}
+              >
+                <Table2 className="mr-2 size-3.5" />
+                <span>{t.name}</span>
+                <span className="ml-auto text-[11px] text-muted-foreground">
+                  {t.baseName}
+                </span>
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        )}
+
+        {bases.length > 0 && (
           <>
-            <CommandGroup heading={`Views · ${current.name}`}>
-              {current.recommendedViews.map((v) => {
-                const meta = VIEW_META[v];
-                const Icon = meta.icon;
-                return (
-                  <CommandItem
-                    key={v}
-                    value={`view ${meta.label} ${current.name}`}
-                    onSelect={() => go(`/app/datasets/${current.id}?view=${v}`)}
-                  >
-                    <Icon />
-                    {meta.label}
-                  </CommandItem>
-                );
-              })}
-            </CommandGroup>
             <CommandSeparator />
+            <CommandGroup heading="Bases">
+              {bases.map((b) => (
+                <CommandItem
+                  key={b.id}
+                  value={`${b.name} add table`}
+                  onSelect={() => go(`/app/import?baseId=${b.id}`)}
+                >
+                  <Database className="mr-2 size-3.5" />
+                  <span>{b.name}</span>
+                  <span className="ml-auto text-[11px] text-muted-foreground">
+                    Add a table
+                  </span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
           </>
         )}
 
-        <CommandGroup heading="Datasets">
-          {datasets.map((d) => {
-            const Icon = SRC_ICON[d.source.kind] ?? Database;
-            return (
-              <CommandItem
-                key={d.id}
-                value={`dataset ${d.name}`}
-                onSelect={() => go(`/app/datasets/${d.id}`)}
-              >
-                <Icon />
-                <span className="truncate">{d.name}</span>
-                <span className="ml-auto font-mono-data text-xs text-muted-foreground">
-                  {d.rowCount} rows
-                </span>
-              </CommandItem>
-            );
-          })}
-        </CommandGroup>
-
         <CommandSeparator />
-
         <CommandGroup heading="Actions">
-          <CommandItem value="overview home" onSelect={() => go("/app")}>
-            <LayoutDashboard />
-            Go to overview
-          </CommandItem>
-          <CommandItem value="import data upload" onSelect={() => go("/app/import")}>
-            <Plus />
+          <CommandItem value="import data csv excel" onSelect={() => go("/app/import")}>
+            <UploadCloud className="mr-2 size-3.5" />
             Import data
           </CommandItem>
-          <CommandItem value="landing marketing home page" onSelect={() => go("/")}>
-            <Home />
-            Landing page
+          <CommandItem value="profile account" onSelect={() => go("/app/profile")}>
+            <UserRound className="mr-2 size-3.5" />
+            Profile
           </CommandItem>
           <CommandItem
             value="toggle theme dark light"
             onSelect={() => {
-              setTheme(resolvedTheme === "dark" ? "light" : "dark");
               onOpenChange(false);
+              setTheme(resolvedTheme === "dark" ? "light" : "dark");
             }}
           >
-            <SunMoon />
+            <SunMoon className="mr-2 size-3.5" />
             Toggle theme
-            <CommandShortcut>⌘K then ⌥</CommandShortcut>
           </CommandItem>
         </CommandGroup>
       </CommandList>

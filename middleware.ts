@@ -1,17 +1,30 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const SUPABASE_KEY =
-  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ??
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+// An env var set to the empty string is not set; `??` doesn't know that.
+const present = (v: string | undefined) => (v?.trim() ? v.trim() : undefined);
+
+const url = present(process.env.NEXT_PUBLIC_SUPABASE_URL);
+const key =
+  present(process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY) ??
+  present(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+
+if (!url || !key) {
+  // Fail at boot, not at request time. A missing env var must never degrade
+  // into "let everyone through" — which is exactly what this used to do.
+  throw new Error(
+    "[swamp] Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY. " +
+      "See .env.local.example. There is no unauthenticated mode."
+  );
+}
+
+// Narrowed above; re-bound so the types survive into the handler below.
+const SUPABASE_URL: string = url;
+const SUPABASE_KEY: string = key;
 
 // Refresh the Supabase session on every matched request and gate the app.
-// When Supabase isn't configured, the app runs open on the local FileStore.
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request });
-
-  if (!SUPABASE_URL || !SUPABASE_KEY) return response;
 
   const supabase = createServerClient(SUPABASE_URL, SUPABASE_KEY, {
     cookies: {

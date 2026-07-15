@@ -175,3 +175,66 @@
   to { opacity: 1; transform: translateY(0); }
 }
 .rise { animation: rise 0.35s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+
+/* ── scroll reveal — pure CSS, progressive enhancement ──
+   Cards fade and rise as they enter the viewport. Gated behind @supports so
+   browsers without scroll-driven animations (and anyone with reduced-motion on)
+   just see the content in place — never stuck hidden. */
+@keyframes reveal-rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .reveal {
+      animation: reveal-rise linear both;
+      animation-timeline: view();
+      animation-range: entry 0% cover 24%;
+    }
+  }
+}
+
+/* ── inverted section band ──
+   A full-width section that reads as the OPPOSITE of the current theme. It swaps
+   the theme's colour tokens within its own scope, so everything inside (headings,
+   body, borders, badges — anything using bg-background / text-foreground / muted /
+   border) flips with it. In light mode the band is black; in dark mode it's white.
+   Used to alternate section bands down the page. */
+.section-invert {
+  --background: 0 0% 13%;
+  --foreground: 0 0% 93%;
+  --card: 0 0% 17%;
+  --card-foreground: 0 0% 93%;
+  --popover: 0 0% 18%;
+  --popover-foreground: 0 0% 93%;
+  --primary: 0 0% 96%;
+  --primary-foreground: 0 0% 12%;
+  --secondary: 0 0% 18%;
+  --secondary-foreground: 0 0% 92%;
+  --muted: 0 0% 17%;
+  --muted-foreground: 0 0% 64%;
+  --accent: 0 0% 20%;
+  --accent-foreground: 0 0% 95%;
+  --border: 0 0% 24%;
+  --input: 0 0% 26%;
+  --ring: 0 0% 64%;
+}
+.dark .section-invert {
+  --background: 0 0% 100%;
+  --foreground: 0 0% 9%;
+  --card: 0 0% 100%;
+  --card-foreground: 0 0% 9%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 0 0% 9%;
+  --primary: 0 0% 9%;
+  --primary-foreground: 0 0% 98%;
+  --secondary: 0 0% 94%;
+  --secondary-foreground: 0 0% 12%;
+  --muted: 0 0% 96%;
+  --muted-foreground: 0 0% 40%;
+  --accent: 0 0% 93%;
+  --accent-foreground: 0 0% 12%;
+  --border: 0 0% 89%;
+  --input: 0 0% 85%;
+  --ring: 0 0% 45%;
+}

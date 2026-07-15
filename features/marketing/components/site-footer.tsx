@@ -1,79 +1,62 @@
 import Link from "next/link";
+import { FOOTER_COLUMNS } from "../nav";
+import { Mark } from "./site-nav";
+import { CookieSettingsButton } from "./cookie-settings-button";
 
-type FLink = { label: string; href: string; external?: boolean };
-
-const COLUMNS: { heading: string; links: FLink[] }[] = [
-  {
-    heading: "Product",
-    links: [
-      { label: "Features", href: "/#features" },
-      { label: "How it works", href: "/#how" },
-      { label: "Open workspace", href: "/app" },
-      { label: "Import data", href: "/app/import" },
-    ],
-  },
-  {
-    heading: "Resources",
-    links: [
-      { label: "GitHub", href: "https://github.com/squid-beast/Webhook-Manager", external: true },
-      { label: "Documentation", href: "https://github.com/squid-beast/Webhook-Manager#readme", external: true },
-      { label: "Changelog", href: "https://github.com/squid-beast/Webhook-Manager/commits/main", external: true },
-    ],
-  },
-  {
-    heading: "Legal",
-    links: [
-      { label: "Terms of Use", href: "/terms" },
-      { label: "Privacy Policy", href: "/privacy" },
-      { label: "Cookie Policy", href: "/cookie-policy" },
-    ],
-  },
-  {
-    heading: "Company",
-    links: [
-      { label: "About", href: "/about" },
-      { label: "Contact", href: "mailto:hello@swamp.app", external: true },
-    ],
-  },
-];
-
-function FooterLink({ link }: { link: FLink }) {
-  const cls = "text-[13.5px] text-foreground/70 transition-colors hover:text-foreground";
-  if (link.external || link.href.startsWith("mailto:")) {
-    return (
-      <a
-        href={link.href}
-        target={link.href.startsWith("mailto:") ? undefined : "_blank"}
-        rel="noreferrer"
-        className={cls}
-      >
-        {link.label}
-      </a>
-    );
-  }
-  return (
-    <Link href={link.href} className={cls}>
-      {link.label}
-    </Link>
-  );
-}
+// The footer.
+//
+// Every link goes somewhere real. The old one pointed "Documentation" at a README
+// that doesn't exist and "Changelog" at a commit list — and a footer full of dead
+// ends tells a visitor the product is abandoned faster than an empty one does. It
+// tells a crawler the same thing.
+//
+// No Careers. No Press. No Partners. We don't have those, so they aren't here.
 
 export function SiteFooter() {
   const year = new Date().getFullYear();
+
   return (
     <footer className="mt-auto border-t">
-      {/* categorized columns */}
-      <div className="mx-auto max-w-6xl px-4 py-12 md:py-16">
-        <div className="grid grid-cols-2 gap-x-6 gap-y-10 sm:grid-cols-4">
-          {COLUMNS.map((col) => (
+      <div className="mx-auto max-w-6xl px-4 py-14 md:py-16">
+        <div className="grid gap-10 md:grid-cols-[1.4fr_repeat(3,1fr)]">
+          <div className="flex flex-col gap-3">
+            <Link
+              href="/"
+              className="flex items-center gap-2.5 font-display text-[17px] font-extrabold tracking-tight"
+            >
+              <Mark />
+              SWAMP
+            </Link>
+            <p className="max-w-xs text-[13.5px] leading-relaxed text-muted-foreground">
+              A shared database your team can actually use. Import a spreadsheet, get
+              something you can filter, link, comment on, and hand to someone else.
+            </p>
+          </div>
+
+          {FOOTER_COLUMNS.map((col) => (
             <div key={col.heading} className="flex flex-col gap-3.5">
-              <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+              <h2 className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
                 {col.heading}
-              </div>
+              </h2>
               <ul className="flex flex-col gap-2.5">
                 {col.links.map((link) => (
                   <li key={link.label}>
-                    <FooterLink link={link} />
+                    {link.external || link.href.startsWith("mailto:") ? (
+                      <a
+                        href={link.href}
+                        {...(link.external ? { target: "_blank", rel: "noreferrer" } : {})}
+                        className="text-[13.5px] text-foreground/70 transition-colors hover:text-foreground"
+                      >
+                        {link.label}
+                      </a>
+                    ) : (
+                      <Link
+                        href={link.href}
+                        className="text-[13.5px] text-foreground/70 transition-colors hover:text-foreground"
+                      >
+                        {link.label}
+                      </Link>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -82,16 +65,13 @@ export function SiteFooter() {
         </div>
       </div>
 
-      {/* bottom bar: copyright left · credit centered · brand right */}
       <div className="border-t">
-        <div className="mx-auto grid max-w-6xl grid-cols-1 items-center gap-3 px-4 py-6 text-[12px] text-muted-foreground sm:grid-cols-3">
-          <span className="text-center sm:text-left">© {year} SWAMP</span>
-          <span className="order-first text-center sm:order-none">
-            Made with a random thought 😂 by Squid-Beast.
-          </span>
-          <span className="text-center font-display text-sm font-extrabold tracking-tight text-foreground sm:text-right">
-            SWAMP
-          </span>
+        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-2 px-4 py-6 text-[12.5px] text-muted-foreground sm:flex-row">
+          <span>© {year} SWAMP</span>
+          <div className="flex items-center gap-4">
+            <CookieSettingsButton className="transition-colors hover:text-foreground" />
+            <span>Built in the open by Squid-Beast.</span>
+          </div>
         </div>
       </div>
     </footer>

@@ -1,9 +1,17 @@
-import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 import { SignInForm } from "@/features/auth/components/sign-in-form";
+import { pageMeta } from "@/shared/seo/metadata";
 
-export const metadata: Metadata = { title: "Sign in — SWAMP" };
+// A login screen is not a landing page. Indexed, it puts a hundred URL variants of
+// itself in Google under a hundred `?next=` params, and none of them rank for
+// anything. noindex.
+export const metadata = pageMeta({
+  title: "Sign in",
+  description: "Sign in to your SWAMP workspace.",
+  path: "/auth/sign-in",
+  noindex: true,
+});
 
 export default function SignInPage() {
   return (

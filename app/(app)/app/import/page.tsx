@@ -1,16 +1,14 @@
 import { Suspense } from "react";
-import { store } from "@/features/datasets/storage/store";
-import { Home } from "@/features/overview/components/Home";
+import { ImportPanel } from "@/features/tables/components/import-panel";
 
-// The data page: upload / connect a source, and see existing datasets. The
-// greeting overview lives at /app; this is where "Import data" points.
 export const dynamic = "force-dynamic";
 
-export default async function ImportPage() {
-  const datasets = await store.list();
+export default function ImportPage() {
+  // ImportPanel reads ?baseId via useSearchParams, which Next requires to sit
+  // inside a Suspense boundary.
   return (
     <Suspense>
-      <Home initial={datasets} />
+      <ImportPanel />
     </Suspense>
   );
 }

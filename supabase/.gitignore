@@ -1,0 +1,9 @@
+# Supabase local stack — never commit these
+.branches
+.temp
+
+# Local env overrides (secrets). Root .env.example is the template.
+.env
+.env.*
+!.env.example
+.env.keys

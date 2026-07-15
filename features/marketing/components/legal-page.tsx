@@ -1,22 +1,32 @@
+import { JsonLd, breadcrumbSchema } from "@/shared/seo/jsonld";
+
 export function LegalPage({
   title,
   updated,
+  path,
   intro,
   sections,
 }: {
   title: string;
   updated: string;
+  /** Absolute path, so the breadcrumb points at the right URL. */
+  path: string;
   intro?: string;
   sections: { heading: string; body: string }[];
 }) {
   return (
     <div className="mx-auto w-full max-w-3xl px-4 py-12 md:py-16">
+      {/* Breadcrumbs render in the SERP instead of the raw URL. Two lines, better
+          result. */}
+      <JsonLd
+        data={breadcrumbSchema([
+          { name: "Home", path: "/" },
+          { name: title, path },
+        ])}
+      />
+
       <h1 className="font-display text-3xl font-extrabold tracking-tight md:text-4xl">{title}</h1>
       <p className="mt-2 font-mono-data text-[12px] text-muted-foreground">Last updated {updated}</p>
-
-      <div className="mt-4 rounded-lg border border-dashed bg-muted/30 px-4 py-3 text-[13px] text-muted-foreground">
-        Placeholder template. Replace with your reviewed legal copy before launch.
-      </div>
 
       {intro && (
         <p className="mt-8 text-[14.5px] leading-relaxed text-muted-foreground">{intro}</p>
