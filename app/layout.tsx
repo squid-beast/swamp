@@ -6,6 +6,7 @@ import { cn } from "@/shared/lib/utils";
 import { ThemeProvider } from "@/shared/components/theme-provider";
 import { Toaster } from "@/shared/ui/sonner";
 import { CookieConsent } from "@/features/marketing/components/cookie-consent";
+import { ConsentAnalytics } from "@/features/marketing/components/consent-analytics";
 import { SITE } from "@/shared/seo/site";
 import { JsonLd, organizationSchema, websiteSchema } from "@/shared/seo/jsonld";
 
@@ -106,6 +107,7 @@ export default function RootLayout({
           {children}
           <Toaster position="bottom-right" />
           <CookieConsent />
+          <ConsentAnalytics />
         </ThemeProvider>
       </body>
     </html>

@@ -18,16 +18,16 @@ import {
 //
 // A real, granular manager: a banner on first visit, and a preferences dialog
 // with three categories. Essential is always on (auth + security); Analytics and
-// Marketing default OFF and are opt-in. Nothing non-essential should run until the
-// matching flag is true — SWAMP sets none today, so this is the gate that keeps it
-// honest if that ever changes.
+// Marketing default OFF and are opt-in. Vercel Analytics only mounts after the
+// Analytics flag is true (see ConsentAnalytics).
 //
 // The choice is stored in localStorage under a versioned key, so bumping the
 // version re-asks everyone (which is what you do when the categories change). The
 // footer's "Cookie settings" button reopens the dialog via a window event.
 //
-// `readConsent()` is exported so future analytics code can check the flag before
-// loading anything.
+// `readConsent()` is exported so analytics (and anything else) can check the flag
+// before loading. Persist also fires `swamp:consent-changed` so listeners can
+// react without a reload.
 // ════════════════════════════════════════════════════════════════════════════
 
 const KEY = "swamp:consent:v1";
@@ -80,6 +80,8 @@ export function CookieConsent() {
     setMarketing(m);
     setDecided(true);
     setPrefsOpen(false);
+    // Let ConsentAnalytics (and anything else) react without a full reload.
+    window.dispatchEvent(new CustomEvent("swamp:consent-changed", { detail: consent }));
   };
 
   const acceptAll = () => persist(true, true);
