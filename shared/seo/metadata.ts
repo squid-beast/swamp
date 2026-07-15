@@ -20,6 +20,7 @@ import { SITE, absolute } from "./site";
 
 export function pageMeta({
   title,
+  titleAbsolute,
   description,
   path,
   kicker,
@@ -27,6 +28,9 @@ export function pageMeta({
 }: {
   /** WITHOUT the site name — the layout's template appends it. */
   title: string;
+  /** An exact <title>, bypassing the "— SWAMP" template. Use for a brand-first
+   *  home title like "SWAMP: Collaborative database" without doubling the brand. */
+  titleAbsolute?: string;
   description: string;
   /** Absolute path from the root, e.g. "/security". */
   path: string;
@@ -41,8 +45,11 @@ export function pageMeta({
     `/og?title=${encodeURIComponent(title)}&kicker=${encodeURIComponent(kicker ?? SITE.name)}`
   );
 
+  // The card title: the absolute one if given, else "<title> — SWAMP".
+  const cardTitle = titleAbsolute ?? `${title} — ${SITE.name}`;
+
   return {
-    title,
+    title: titleAbsolute ? { absolute: titleAbsolute } : title,
     description,
 
     // The single most under-used tag in the whole spec.
@@ -70,14 +77,14 @@ export function pageMeta({
       type: "website",
       url,
       siteName: SITE.name,
-      title: `${title} — ${SITE.name}`,
+      title: cardTitle,
       description,
       images: [{ url: ogImage, width: 1200, height: 630, alt: title }],
     },
 
     twitter: {
       card: "summary_large_image",
-      title: `${title} — ${SITE.name}`,
+      title: cardTitle,
       description,
       images: [ogImage],
       ...(SITE.twitter ? { creator: SITE.twitter } : {}),
