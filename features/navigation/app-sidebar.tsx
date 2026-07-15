@@ -31,6 +31,7 @@ import {
   SidebarMenuSubItem,
   SidebarRail,
   SidebarTrigger,
+  useSidebar,
 } from "@/shared/ui/sidebar";
 import {
   Collapsible,
@@ -46,6 +47,7 @@ import {
 } from "@/shared/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/shared/ui/avatar";
 import { createClient } from "@/shared/supabase/client";
+import { SwampMark } from "@/shared/components/swamp-mark";
 import { cn } from "@/shared/lib/utils";
 import type { ShellUser } from "./app-shell";
 
@@ -65,6 +67,7 @@ export function AppSidebar({
 }) {
   const pathname = usePathname();
   const router = useRouter();
+  const { state } = useSidebar();
 
   const signOut = async () => {
     await createClient().auth.signOut();
@@ -86,7 +89,9 @@ export function AppSidebar({
         <SidebarMenu>
           <SidebarMenuItem className="flex items-center justify-between">
             <Link href="/app" className="flex items-center gap-2 px-2 py-1">
-              <Database className="size-4 text-brand" />
+              {/* Same mark as the marketing site. Keyed on collapse state so it
+                  redraws its links each time the sidebar opens or closes. */}
+              <SwampMark key={state} animate className="size-5 shrink-0" />
               <span className="font-display text-sm font-extrabold tracking-tight group-data-[collapsible=icon]:hidden">
                 SWAMP
               </span>
