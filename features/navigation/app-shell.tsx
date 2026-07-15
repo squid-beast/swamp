@@ -58,9 +58,9 @@ export function AppShell({
       <AppSidebar bases={bases} user={user} onSearch={() => setCmdOpen(true)} />
       <SidebarInset className="min-w-0">
         <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center gap-2 border-b bg-background/85 px-3 backdrop-blur supports-[backdrop-filter]:bg-background/70">
-          {/* Desktop toggles from inside the sidebar (ChatGPT-style); this one is for mobile. */}
-          <SidebarTrigger className="-ml-1 md:hidden" />
-          <Separator orientation="vertical" className="mr-1 h-5 md:hidden" />
+          {/* The sidebar toggle — always available, top-left, ChatGPT-style. */}
+          <SidebarTrigger className="-ml-1" />
+          <Separator orientation="vertical" className="mr-1 h-5" />
           <Breadcrumb>
             <BreadcrumbList>
               <BreadcrumbItem>

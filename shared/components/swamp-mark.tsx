@@ -33,7 +33,7 @@ export function SwampMark({
       className={cn("swamp-mark inline-flex text-foreground", animate && "swamp-mark--animate", className)}
       aria-hidden="true"
     >
-      <svg viewBox="0 0 48 48" fill="none" className="size-full" style={{ overflow: "visible" }}>
+      <svg viewBox="0 0 48 48" fill="none" className="size-full">
         <g stroke="currentColor" strokeWidth={2.4} strokeLinecap="round">
           {EDGES.map(([a, b], i) => (
             <line

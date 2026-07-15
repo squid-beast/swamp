@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Database, Sparkles, Table2, UploadCloud } from "lucide-react";
+import { Bug, CalendarDays, Database, Plus, Sparkles, Table2, UploadCloud, Users } from "lucide-react";
 import { createClient } from "@/shared/supabase/client";
 import type { NavBase } from "@/features/tables/nav";
 import { Button } from "@/shared/ui/button";
@@ -39,6 +39,14 @@ function greetWord(): string {
   return h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
 }
 
+// Client-side card metadata. The actual base is built server-side (see
+// features/tables/templates.ts) — this list just drives the buttons.
+const TEMPLATE_CARDS = [
+  { id: "crm", name: "CRM", desc: "Companies, contacts, and a drag-and-drop deal pipeline.", Icon: Users },
+  { id: "content-calendar", name: "Content calendar", desc: "Plan posts across channels, on a calendar and a board.", Icon: CalendarDays },
+  { id: "bug-tracker", name: "Bug tracker", desc: "Triage issues by priority and status.", Icon: Bug },
+] as const;
+
 export function Overview({
   firstName,
   userId,
@@ -55,6 +63,28 @@ export function Overview({
   const [mounted, setMounted] = React.useState(false);
   const [sub, setSub] = React.useState("");
   const [profileOpen, setProfileOpen] = React.useState(needsProfile);
+  const [busy, setBusy] = React.useState<string | null>(null);
+
+  // Create a base from a template (or "blank") and open it. `busy` stays set on
+  // success so the buttons don't flicker back to life mid-navigation.
+  const create = async (template: string) => {
+    if (busy) return;
+    setBusy(template);
+    try {
+      const res = await fetch("/api/templates", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ template }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Could not create the base");
+      router.push(`/app/t/${json.tableId}`);
+      router.refresh();
+    } catch (e) {
+      setBusy(null);
+      toast.error((e as Error).message);
+    }
+  };
 
   // The greeting is time-of-day and therefore local. Computing it on the server
   // means a user in Sydney gets told "Good evening" at 9am — so compute it after
@@ -82,22 +112,73 @@ export function Overview({
       </div>
 
       {empty ? (
-        <div className="mt-10 flex flex-col items-center gap-3 rounded-xl border border-dashed px-6 py-12 text-center">
-          <Sparkles className="size-6 text-brand" />
-          <p className="text-[14px] font-medium">No bases yet</p>
-          <p className="max-w-sm text-[13px] text-muted-foreground">
-            Import a CSV, Excel file or JSON payload. SWAMP types every column and
-            gives you a table.
+        <div className="mt-10">
+          <div className="mb-4 flex items-center gap-2">
+            <Sparkles className="size-4 text-brand" />
+            <p className="text-[14px] font-medium">Start with a template</p>
+          </div>
+          <p className="mb-4 text-[13px] text-muted-foreground">
+            A ready-made base with example data. Change anything, or start blank.
           </p>
-          <Button asChild className="mt-1 gap-2">
-            <Link href="/app/import">
-              <UploadCloud className="size-3.5" />
-              Import data
-            </Link>
-          </Button>
+
+          <div className="grid gap-3 sm:grid-cols-3">
+            {TEMPLATE_CARDS.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => create(t.id)}
+                disabled={!!busy}
+                className="flex flex-col items-start gap-1.5 rounded-xl border p-4 text-left transition-colors hover:border-foreground/25 hover:bg-muted/40 disabled:opacity-60"
+              >
+                <span className="flex size-8 items-center justify-center rounded-lg border bg-background">
+                  <t.Icon className="size-4" />
+                </span>
+                <span className="mt-1 text-[14px] font-medium">{t.name}</span>
+                <span className="text-[12.5px] leading-relaxed text-muted-foreground">
+                  {t.desc}
+                </span>
+                {busy === t.id && (
+                  <span className="text-[11px] text-muted-foreground">Creating…</span>
+                )}
+              </button>
+            ))}
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => create("blank")}
+              disabled={!!busy}
+              className="gap-2"
+            >
+              <Plus className="size-3.5" />
+              Blank base
+            </Button>
+            <Button asChild variant="ghost" size="sm" className="gap-2">
+              <Link href="/app/import">
+                <UploadCloud className="size-3.5" />
+                Import a file
+              </Link>
+            </Button>
+          </div>
         </div>
       ) : (
-        <div className="mt-8 grid gap-3 sm:grid-cols-2">
+        <>
+          <div className="mt-8 flex items-center justify-between">
+            <h2 className="text-[13px] font-medium text-muted-foreground">Your bases</h2>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => create("blank")}
+              disabled={!!busy}
+              className="gap-1.5"
+            >
+              <Plus className="size-3.5" />
+              New base
+            </Button>
+          </div>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
           {bases.map((base) => (
             <div key={base.id} className="rounded-xl border p-4">
               <div className="flex items-center gap-2">
@@ -134,7 +215,8 @@ export function Overview({
               </Button>
             </div>
           ))}
-        </div>
+          </div>
+        </>
       )}
 
       <ProfileGate

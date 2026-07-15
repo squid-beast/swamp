@@ -7,12 +7,16 @@ import {
   ChevronRight,
   ChevronsUpDown,
   Database,
+  KeyRound,
   LogOut,
   Plus,
   Search,
+  Sheet,
   Table2,
   UploadCloud,
   UserRound,
+  Users,
+  Webhook,
 } from "lucide-react";
 import type { NavBase } from "@/features/tables/nav";
 import {
@@ -30,7 +34,6 @@ import {
   SidebarMenuSubButton,
   SidebarMenuSubItem,
   SidebarRail,
-  SidebarTrigger,
   useSidebar,
 } from "@/shared/ui/sidebar";
 import {
@@ -87,8 +90,11 @@ export function AppSidebar({
     <Sidebar collapsible="icon">
       <SidebarHeader>
         <SidebarMenu>
-          <SidebarMenuItem className="flex items-center justify-between">
-            <Link href="/app" className="flex items-center gap-2 px-2 py-1">
+          <SidebarMenuItem className="flex items-center group-data-[collapsible=icon]:justify-center">
+            <Link
+              href="/app"
+              className="flex items-center gap-2 px-2 py-1 group-data-[collapsible=icon]:px-0"
+            >
               {/* Same mark as the marketing site. Keyed on collapse state so it
                   redraws its links each time the sidebar opens or closes. */}
               <SwampMark key={state} animate className="size-5 shrink-0" />
@@ -96,7 +102,6 @@ export function AppSidebar({
                 SWAMP
               </span>
             </Link>
-            <SidebarTrigger className="hidden md:flex" />
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
@@ -120,6 +125,18 @@ export function AppSidebar({
                   <Link href="/app/import">
                     <UploadCloud />
                     <span>Import data</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  isActive={pathname === "/app/connect"}
+                  tooltip="Connect a sheet"
+                >
+                  <Link href="/app/connect">
+                    <Sheet />
+                    <span>Connect a sheet</span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
@@ -191,6 +208,42 @@ export function AppSidebar({
                               <Link href={`/app/import?baseId=${base.id}`}>
                                 <Plus className="size-3.5" />
                                 <span>New table</span>
+                              </Link>
+                            </SidebarMenuSubButton>
+                          </SidebarMenuSubItem>
+
+                          {/* Base settings — the pages that were built but had no
+                              way in. One line each, under the base they belong to. */}
+                          <SidebarMenuSubItem>
+                            <SidebarMenuSubButton
+                              asChild
+                              isActive={pathname === `/app/b/${base.id}/members`}
+                            >
+                              <Link href={`/app/b/${base.id}/members`}>
+                                <Users className="size-3.5" />
+                                <span>Members</span>
+                              </Link>
+                            </SidebarMenuSubButton>
+                          </SidebarMenuSubItem>
+                          <SidebarMenuSubItem>
+                            <SidebarMenuSubButton
+                              asChild
+                              isActive={pathname === `/app/b/${base.id}/api`}
+                            >
+                              <Link href={`/app/b/${base.id}/api`}>
+                                <KeyRound className="size-3.5" />
+                                <span>API tokens</span>
+                              </Link>
+                            </SidebarMenuSubButton>
+                          </SidebarMenuSubItem>
+                          <SidebarMenuSubItem>
+                            <SidebarMenuSubButton
+                              asChild
+                              isActive={pathname === `/app/b/${base.id}/automations`}
+                            >
+                              <Link href={`/app/b/${base.id}/automations`}>
+                                <Webhook className="size-3.5" />
+                                <span>Automations</span>
                               </Link>
                             </SidebarMenuSubButton>
                           </SidebarMenuSubItem>
