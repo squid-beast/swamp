@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { createUser, deleteUser, must, workspaceOf, type TestUser } from "./harness";
+import { anon, createUser, deleteUser, must, workspaceOf, type TestUser } from "./harness";
 
 // ════════════════════════════════════════════════════════════════════════════
 // Phase 2 — the relational core, against real Postgres.
@@ -423,3 +423,132 @@ async function fieldIdByKey(tableId: string, key: string): Promise<string | null
     .maybeSingle();
   return (data?.id as string) ?? null;
 }
+
+// ─── What a write recomputed ────────────────────────────────────────────────
+
+describe("swamp_computed_values", () => {
+  // A formula's value exists nowhere on disk — the query engine derives it at read
+  // time from `records.data`, which holds stored scalars only. So after a write the
+  // client cannot know it and has to ask. This is that ask.
+  //
+  // The load-bearing property is what it does NOT return: scalars. Echoing those
+  // back would race the undo stack and the user's own typing, which is why the
+  // second test here matters more than the first.
+  let tableId: string;
+  let recId: string;
+
+  beforeAll(async () => {
+    const t = must(
+      await alice.db
+        .from("tables")
+        .insert({ base_id: baseId, name: "Computed" })
+        .select()
+        .single()
+    ) as { id: string };
+    tableId = t.id;
+
+    const nId = await makeField(tableId, "N", "fld_n", "number", {}, true);
+
+    // Total = N * 2. The AST references the field by ID, never by name — which is
+    // what makes renaming free.
+    await makeField(tableId, "Total", "fld_total", "formula", {
+      ast: { t: "bin", op: "*", l: { t: "field", id: nId }, r: { t: "num", v: 2 } },
+    });
+
+    const r = must(
+      await alice.db
+        .from("records")
+        .insert({ table_id: tableId, base_id: baseId, data: { fld_n: 5 } })
+        .select()
+        .single()
+    ) as { id: string };
+    recId = r.id;
+  });
+
+  it("returns the formula's value as it stands now", async () => {
+    const { data } = await alice.db.rpc("swamp_computed_values", {
+      p_table_id: tableId,
+      p_ids: [recId],
+    });
+
+    expect(data).toHaveLength(1);
+    expect((data as { values: Record<string, unknown> }[])[0].values.fld_total).toBe(10);
+  });
+
+  it("returns COMPUTED keys only — never the scalar that was written", async () => {
+    // The whole safety argument. A scalar coming back could land on top of newer
+    // typing, or on top of an undo, and put the old value under the cursor.
+    const { data } = await alice.db.rpc("swamp_computed_values", {
+      p_table_id: tableId,
+      p_ids: [recId],
+    });
+
+    expect(Object.keys((data as { values: object }[])[0].values)).toEqual(["fld_total"]);
+  });
+
+  it("recomputes after a patch", async () => {
+    must(
+      await alice.db.rpc("swamp_patch_records", {
+        p_table_id: tableId,
+        p_patches: [{ id: recId, values: { fld_n: 7 } }],
+      })
+    );
+
+    const { data } = await alice.db.rpc("swamp_computed_values", {
+      p_table_id: tableId,
+      p_ids: [recId],
+    });
+
+    expect((data as { values: Record<string, unknown> }[])[0].values.fld_total).toBe(14);
+  });
+
+  it("a table with no computed fields returns [] without touching the heap", async () => {
+    // The common table. It must cost one catalog read and no query at all.
+    const plain = must(
+      await alice.db.from("tables").insert({ base_id: baseId, name: "Plain" }).select().single()
+    ) as { id: string };
+    await makeField(plain.id, "Name", "fld_name", "text", {}, true);
+
+    const rec = must(
+      await alice.db
+        .from("records")
+        .insert({ table_id: plain.id, base_id: baseId, data: { fld_name: "x" } })
+        .select()
+        .single()
+    ) as { id: string };
+
+    const { data } = await alice.db.rpc("swamp_computed_values", {
+      p_table_id: plain.id,
+      p_ids: [rec.id],
+    });
+    expect(data).toEqual([]);
+  });
+
+  it("cannot be used to read a table you have no access to", async () => {
+    // SECURITY INVOKER, so RLS applies. The catalog fails closed first.
+    const mallory = await createUser();
+    try {
+      const { error } = await mallory.db.rpc("swamp_computed_values", {
+        p_table_id: tableId,
+        p_ids: [recId],
+      });
+      expect(error).not.toBeNull();
+    } finally {
+      await deleteUser(mallory);
+    }
+  });
+
+  it("is not reachable by anon", async () => {
+    // Postgres grants EXECUTE to PUBLIC by default and anon inherits it, so
+    // `revoke from anon` alone does nothing — the migration revokes from PUBLIC too.
+    // This asserts the revoke actually took.
+    const { data } = await alice.db.rpc("swamp_can", { p_base_id: baseId, p_min: "viewer" });
+    expect(data).toBe(true); // sanity: the helper works at all
+
+    const { error } = await anon().rpc("swamp_computed_values", {
+      p_table_id: tableId,
+      p_ids: [recId],
+    });
+    expect(error).not.toBeNull();
+  });
+});

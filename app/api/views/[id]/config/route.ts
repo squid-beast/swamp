@@ -32,6 +32,11 @@ const patchSchema = z
         show: z.boolean().optional(),
         sortOrder: z.number().optional(),
         width: z.number().int().min(60).max(1000).optional(),
+        // Grouping. `groupByOrder` is the level (0 = outermost); null clears it.
+        // Three levels, like NocoDB (nc-gui/composables/useViewGroupBy.ts:27).
+        groupBy: z.boolean().optional(),
+        groupByOrder: z.number().int().min(0).max(2).nullable().optional(),
+        groupByDir: z.enum(["asc", "desc"]).nullable().optional(),
         formConfig: z
           .object({
             label: z.string().max(200).optional(),

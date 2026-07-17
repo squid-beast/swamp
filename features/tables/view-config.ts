@@ -267,7 +267,30 @@ export async function saveSorts(
   }
 }
 
-/** Per-view field settings: visibility, order, width. Upsert, one row per field. */
+/**
+ * Per-view field settings: visibility, order, width, grouping, aggregation.
+ * Upsert, one row per field.
+ *
+ * ── Why this batches by key signature ──
+ *
+ * PostgREST turns an array into ONE multi-row INSERT, and the column list is the
+ * UNION of the keys across the array. A row that omitted a key another row carried
+ * gets an explicit NULL — not the column's default. So a payload mixing
+ * `{fieldId, width}` with `{fieldId, sortOrder}` writes NULL into `show` and
+ * `group_by`, which are NOT NULL, and the whole batch dies with a 23502. Worse for
+ * `aggregation`, which IS nullable: that one silently wipes the column and returns
+ * 200.
+ *
+ * Callers used to be safe only by accident — every one of them happened to send
+ * homogeneous rows. The first caller to mix keys would have found this the hard
+ * way, and the same union rule already broke a NOT NULL on `fields.is_primary` in
+ * a test seed, which is how it was found.
+ *
+ * Grouping by key signature means each upsert carries exactly one column list, so
+ * no row is ever missing a key that another row supplied. It costs one round trip
+ * per distinct shape — in practice one — and it means no caller has to know any of
+ * the above.
+ */
 export async function saveViewFields(
   viewId: string,
   baseId: string,
@@ -276,21 +299,40 @@ export async function saveViewFields(
     show?: boolean;
     sortOrder?: number;
     width?: number;
+    groupBy?: boolean;
+    groupByOrder?: number | null;
+    groupByDir?: "asc" | "desc" | null;
+    aggregation?: string | null;
     formConfig?: ViewField["formConfig"];
   }[]
 ): Promise<void> {
-  const rows = patches.map((p) => ({
+  if (!patches.length) return;
+
+  const rowOf = (p: (typeof patches)[number]) => ({
     view_id: viewId,
     field_id: p.fieldId,
     base_id: baseId,
     ...(p.show !== undefined ? { show: p.show } : {}),
     ...(p.sortOrder !== undefined ? { sort_order: p.sortOrder } : {}),
     ...(p.width !== undefined ? { width: p.width } : {}),
+    ...(p.groupBy !== undefined ? { group_by: p.groupBy } : {}),
+    ...(p.groupByOrder !== undefined ? { group_by_order: p.groupByOrder } : {}),
+    ...(p.groupByDir !== undefined ? { group_by_dir: p.groupByDir } : {}),
+    ...(p.aggregation !== undefined ? { aggregation: p.aggregation } : {}),
     ...(p.formConfig !== undefined ? { form_config: p.formConfig } : {}),
-  }));
+  });
 
-  const { error } = await db()
-    .from("view_fields")
-    .upsert(rows, { onConflict: "view_id,field_id" });
-  if (error) throw new Error(`saveViewFields: ${error.message}`);
+  const byShape = new Map<string, Record<string, unknown>[]>();
+  for (const p of patches) {
+    const row = rowOf(p);
+    const shape = Object.keys(row).sort().join(",");
+    byShape.set(shape, [...(byShape.get(shape) ?? []), row]);
+  }
+
+  for (const rows of byShape.values()) {
+    const { error } = await db()
+      .from("view_fields")
+      .upsert(rows, { onConflict: "view_id,field_id" });
+    if (error) throw new Error(`saveViewFields: ${error.message}`);
+  }
 }

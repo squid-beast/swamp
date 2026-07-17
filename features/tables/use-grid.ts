@@ -78,12 +78,17 @@ export function useGrid({ fields, records, tableId, applyLocal }: UseGridArgs) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ patches }),
         });
+
+        const body = await res.json().catch(() => ({}));
         if (!res.ok) {
-          const body = await res.json().catch(() => ({}));
           throw new Error(
             body?.errors?.[0]?.error ?? body?.error ?? "Could not save"
           );
         }
+
+        // What the write recomputed. Empty for a table with no computed fields,
+        // which is most of them.
+        return body?.computed ?? [];
       },
 
       async insert(rows) {
@@ -359,8 +364,16 @@ export function useGrid({ fields, records, tableId, applyLocal }: UseGridArgs) {
     (dr: number, dc: number, extend = false) => {
       if (!active) return;
 
-      const row = Math.max(0, Math.min(records.length - 1, active.row + dr));
-      const col = Math.max(0, Math.min(fields.length - 1, active.col + dc));
+      // Step from the MOVING end of the selection, not the anchor.
+      //
+      // `active` is the anchor and deliberately doesn't move while extending, so
+      // stepping from it made every shift+Down recompute the same cell —
+      // active.row + 1, forever. The selection reached two cells and stopped dead.
+      // Nothing here was off by one; the second press onwards did nothing at all.
+      const base = extend ? (range?.to ?? active) : active;
+
+      const row = Math.max(0, Math.min(records.length - 1, base.row + dr));
+      const col = Math.max(0, Math.min(fields.length - 1, base.col + dc));
 
       if (extend) {
         setRange({ from: range?.from ?? active, to: { row, col } });

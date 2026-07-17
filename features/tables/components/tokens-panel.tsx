@@ -20,9 +20,6 @@ import { TOKEN_SCOPES, type ApiToken, type TokenScope } from "../types";
 const SCOPE_HINTS: Record<TokenScope, string> = {
   "records:read": "Read records.",
   "records:write": "Create, update and delete records.",
-  "schema:read": "Read tables and fields.",
-  "webhooks:read": "Read webhooks and their delivery log.",
-  "webhooks:write": "Create and change webhooks.",
 };
 
 /** 90 days. A token with no expiry is a credential that outlives the reason it was

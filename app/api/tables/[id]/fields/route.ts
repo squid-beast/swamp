@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getTable, listFields } from "@/features/tables/repo";
-import { createField, reorderFields } from "@/features/tables/schema-ops";
+import { createField } from "@/features/tables/schema-ops";
 import { createFieldSchema } from "@/features/tables/schema";
 import { requireAuth } from "@/shared/supabase/server";
-import { z } from "zod";
 
 // Fields for a table.
 //
@@ -37,27 +36,6 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   try {
     const field = await createField(params.id, table.baseId, parsed.data);
     return NextResponse.json({ field });
-  } catch (e) {
-    return NextResponse.json({ error: (e as Error).message }, { status: 403 });
-  }
-}
-
-const reorderSchema = z.object({
-  order: z.array(z.object({ id: z.string().uuid(), sortOrder: z.number() })).min(1),
-});
-
-export async function PATCH(req: NextRequest) {
-  const denied = await requireAuth();
-  if (denied) return denied;
-
-  const parsed = reorderSchema.safeParse(await req.json().catch(() => ({})));
-  if (!parsed.success) {
-    return NextResponse.json({ error: "invalid body" }, { status: 400 });
-  }
-
-  try {
-    await reorderFields(parsed.data.order);
-    return NextResponse.json({ ok: true });
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 403 });
   }

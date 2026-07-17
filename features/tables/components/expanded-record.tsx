@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { ChevronDown, ChevronUp, Copy, Trash2, X } from "lucide-react";
+import { ChevronDown, ChevronUp, Copy, CopyPlus, Trash2, X } from "lucide-react";
 import { Button } from "@/shared/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/shared/ui/dialog";
 import { cn } from "@/shared/lib/utils";
@@ -34,6 +34,7 @@ export function ExpandedRecord({
   onIndexChange,
   onUpdateCell,
   onDelete,
+  onDuplicate,
   tableId,
   onLinksChanged,
   currentUserId,
@@ -47,6 +48,10 @@ export function ExpandedRecord({
   onIndexChange: (next: number) => void;
   onUpdateCell: (recordId: string, key: string, value: unknown) => void;
   onDelete: (id: string) => void;
+  /** Clone this record. The caller decides where the copy lands; everything
+   *  un-copyable is dropped server-side by sanitizeValues, which already refuses
+   *  every read-only type. */
+  onDuplicate?: (record: Record_) => void;
   tableId: string;
   onLinksChanged: () => void;
   currentUserId: string;
@@ -126,6 +131,20 @@ export function ExpandedRecord({
           >
             <Copy className="size-3.5" />
           </Button>
+          {onDuplicate && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="size-8 p-0"
+              onClick={() => {
+                onDuplicate(record);
+                onOpenChange(false);
+              }}
+              aria-label="Duplicate record"
+            >
+              <CopyPlus className="size-3.5" />
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="sm"

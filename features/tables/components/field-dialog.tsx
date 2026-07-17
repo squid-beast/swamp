@@ -4,6 +4,7 @@ import * as React from "react";
 import { toast } from "sonner";
 import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/shared/ui/button";
+import { Checkbox } from "@/shared/ui/checkbox";
 import { Input } from "@/shared/ui/input";
 import { Label } from "@/shared/ui/label";
 import { cn } from "@/shared/lib/utils";
@@ -23,6 +24,8 @@ import {
   SelectValue,
 } from "@/shared/ui/select";
 import {
+  BARCODE_FORMATS,
+  BARCODE_SOURCE_TYPES,
   SCALAR_FIELD_TYPES,
   isComputedField,
   type Field,
@@ -85,10 +88,23 @@ const TYPE_LABEL: Partial<Record<FieldType, string>> = {
 
 const HAS_OPTIONS = new Set<FieldType>(["singleSelect", "multiSelect", "status"]);
 
-/** Not scalars, not relational. They have a value AND a behaviour. */
+/** Not scalars, not relational. They have a value AND a behaviour.
+ *
+ *  The four automatic ones were in FIELD_TYPES and the SQL enum from the start,
+ *  and passed createFieldSchema — so they were creatable by curl and simply absent
+ *  from this list, which meant a field you could make but not see. The query engine
+ *  has always projected them (platform.sql:1611); nothing was missing but the
+ *  offer. */
 const PLATFORM_TYPES: { value: FieldType; label: string; hint: string }[] = [
   { value: "attachment", label: "Attachment", hint: "Files, stored privately" },
   { value: "button", label: "Button", hint: "Open a URL, or call a webhook" },
+  { value: "user", label: "User", hint: "Someone with access to this base" },
+  { value: "createdBy", label: "Created by", hint: "Who made the record. Automatic" },
+  { value: "modifiedBy", label: "Last modified by", hint: "Who touched it last. Automatic" },
+  { value: "createdTime", label: "Created time", hint: "When it was made. Automatic" },
+  { value: "modifiedTime", label: "Last modified time", hint: "When it changed. Automatic" },
+  { value: "barcode", label: "Barcode", hint: "Draws another field as a barcode" },
+  { value: "qr", label: "QR code", hint: "Draws another field as a QR code" },
 ];
 
 const PALETTE = ["amber", "violet", "teal", "rose", "sky", "lime", "orange", "fuchsia"];
@@ -123,12 +139,32 @@ export function FieldDialog({
 
   // button
   const [action, setAction] = React.useState<"url" | "webhook">("url");
+  const [allowMultiple, setAllowMultiple] = React.useState(false);
+  const [sourceFieldId, setSourceFieldId] = React.useState<string>("");
+  const [barcodeFormat, setBarcodeFormat] = React.useState<string>("CODE128");
   const [label, setLabel] = React.useState("");
   const [expr, setExpr] = React.useState("");
   const [webhookId, setWebhookId] = React.useState("");
   const [webhooks, setWebhooks] = React.useState<{ id: string; name: string }[]>([]);
 
   const baseId = fields[0]?.baseId;
+
+  /** What a barcode/QR may point at.
+   *
+   *  Scalars only, and not itself. The same list the catalog enforces in SQL — it
+   *  resolves the pointer in pass 1, before formulas are computed, so a barcode
+   *  pointing at a formula would read an expression that doesn't exist yet. If this
+   *  list and BARCODE_SOURCE_TYPES ever drift, the database wins and the field just
+   *  renders blank. */
+  const sourceOptions = React.useMemo(
+    () =>
+      fields.filter(
+        (f) =>
+          f.id !== field?.id &&
+          (BARCODE_SOURCE_TYPES as readonly string[]).includes(f.type)
+      ),
+    [fields, field?.id]
+  );
 
   React.useEffect(() => {
     if (!open) return;
@@ -138,6 +174,9 @@ export function FieldDialog({
     setCurrency(field?.options.currency ?? "USD");
 
     setAction(field?.options.action ?? "url");
+    setAllowMultiple(!!field?.options.allowMultiple);
+    setSourceFieldId(field?.options.sourceFieldId ?? "");
+    setBarcodeFormat(field?.options.barcodeFormat ?? "CODE128");
     setLabel(field?.options.label ?? "");
     setExpr(field?.options.exprRaw ?? "");
     setWebhookId(field?.options.webhookId ?? "");
@@ -195,6 +234,15 @@ export function FieldDialog({
       options: {
         ...(HAS_OPTIONS.has(type) ? { options } : {}),
         ...(type === "currency" ? { currency } : {}),
+        ...(type === "user" ? { allowMultiple } : {}),
+        // An unset source is allowed: the cell renders blank until you pick one,
+        // which is friendlier than refusing to create the field at all.
+        ...(type === "barcode" || type === "qr"
+          ? {
+              ...(sourceFieldId ? { sourceFieldId } : {}),
+              ...(type === "barcode" ? { barcodeFormat } : {}),
+            }
+          : {}),
         ...buttonOptions(),
       },
     };
@@ -317,6 +365,75 @@ export function FieldDialog({
               </SelectContent>
             </Select>
           </div>
+
+          {type === "user" && (
+            <label className="flex items-start gap-2.5">
+              <Checkbox
+                checked={allowMultiple}
+                onCheckedChange={(v) => setAllowMultiple(v === true)}
+                className="mt-0.5"
+              />
+              <span className="flex flex-col">
+                <span className="text-[13px]">Allow several people</span>
+                <span className="text-[11px] text-muted-foreground">
+                  Off, the cell holds one person. Matches NocoDB, which also defaults
+                  to one.
+                </span>
+              </span>
+            </label>
+          )}
+
+          {(type === "barcode" || type === "qr") && (
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-1.5">
+                <Label className="text-[12px] text-muted-foreground">
+                  Draw which field?
+                </Label>
+                <Select value={sourceFieldId} onValueChange={setSourceFieldId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Pick a field" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {sourceOptions.length === 0 && (
+                      <p className="px-2 py-1.5 text-[12px] text-muted-foreground">
+                        No text or number field to draw
+                      </p>
+                    )}
+                    {sourceOptions.map((f) => (
+                      <SelectItem key={f.id} value={f.id}>
+                        {f.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-[11px] text-muted-foreground">
+                  This field holds no value of its own — it draws that one.
+                </p>
+              </div>
+
+              {type === "barcode" && (
+                <div className="flex flex-col gap-1.5">
+                  <Label className="text-[12px] text-muted-foreground">Format</Label>
+                  <Select value={barcodeFormat} onValueChange={setBarcodeFormat}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {BARCODE_FORMATS.map((f) => (
+                        <SelectItem key={f} value={f}>
+                          {f}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[11px] text-muted-foreground">
+                    CODE128 takes any text. The others are strict — EAN13 wants 13
+                    digits — and the cell says so when a value doesn&apos;t fit.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
 
           {type === "button" && (
             <div className="flex flex-col gap-3">

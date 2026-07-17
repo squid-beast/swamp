@@ -18,7 +18,7 @@ import type {
   ViewField,
 } from "../types";
 import { canEditViewConfig } from "../types";
-import { Grid } from "./grid";
+import { Grid, groupKeyOf } from "./grid";
 import { Gallery } from "./gallery";
 import { Kanban } from "./kanban";
 import { Calendar } from "./calendar";
@@ -49,6 +49,7 @@ export function TableWorkspace({
   tables,
   userId,
   role,
+  openRecordId,
 }: {
   table: Table;
   fields: Field[];
@@ -59,6 +60,8 @@ export function TableWorkspace({
   tables: Table[];
   userId: string;
   role: "viewer" | "commenter" | "editor" | "creator" | "owner" | null;
+  /** From ?record=… — open this record expanded on load. */
+  openRecordId?: string | null;
 }) {
   const router = useRouter();
 
@@ -69,7 +72,14 @@ export function TableWorkspace({
   const [search, setSearch] = React.useState("");
   const [debounced, setDebounced] = React.useState("");
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
-  const [expandedId, setExpandedId] = React.useState<string | null>(null);
+  // Seeded from ?record=…, so a copied link opens the record it names.
+  //
+  // The "Copy link" button in the expanded record has always produced
+  // `?record=<id>`, and nothing has ever read it — the button said "Link copied"
+  // and the link went to a plain grid. Note the record may not be on the first
+  // page, or may not match the view's filter at all; that is handled where the
+  // record is looked up, not here.
+  const [expandedId, setExpandedId] = React.useState<string | null>(openRecordId ?? null);
   const [fieldDialog, setFieldDialog] = React.useState<{ open: boolean; field?: Field }>({
     open: false,
   });
@@ -110,13 +120,39 @@ export function TableWorkspace({
     return () => clearTimeout(t);
   }, [search]);
 
+  /** The field this view groups by, if any. One level for now — the model carries
+   *  group_by_order for three, like NocoDB, and the day a second level is wanted the
+   *  sort below just gets another entry. */
+  const groupBy = React.useMemo(() => {
+    const vf = config.viewFields
+      .filter((v) => v.groupBy)
+      .sort((a, b) => (a.groupByOrder ?? 0) - (b.groupByOrder ?? 0))[0];
+    if (!vf) return null;
+
+    const field = fields.find((f) => f.id === vf.fieldId);
+    return field ? { field, dir: vf.groupByDir ?? ("asc" as const) } : null;
+  }, [config.viewFields, fields]);
+
   const spec: QuerySpec = React.useMemo(
     () => ({
       ...(config.filter ? { filter: config.filter } : {}),
-      ...(config.sorts.length ? { sort: config.sorts } : {}),
+      // Grouping IS a sort, and it goes first.
+      //
+      // That is the whole trick: rows then arrive grouped, contiguously, and the
+      // keyset cursor works over it unchanged because the compiler builds the cursor
+      // generically from whatever is in `sort`. The grid puts a header wherever the
+      // value changes. No engine change, no pagination-within-groups problem.
+      ...(groupBy || config.sorts.length
+        ? {
+            sort: [
+              ...(groupBy ? [{ field: groupBy.field.key, dir: groupBy.dir }] : []),
+              ...config.sorts,
+            ],
+          }
+        : {}),
       ...(debounced ? { search: debounced } : {}),
     }),
-    [config.filter, config.sorts, debounced]
+    [config.filter, config.sorts, debounced, groupBy]
   );
 
   const {
@@ -130,6 +166,60 @@ export function TableWorkspace({
     applyLocal,
     reload,
   } = useRecords(table.id, spec);
+
+  // The group headers.
+  //
+  // Fetched separately from the rows, and refetched only when the FILTER, the SEARCH
+  // or the grouped field changes — never on scroll. The counts describe the whole
+  // filtered set, so they must not be recomputed per page, and counting the loaded
+  // window instead would report "3" for a group of 3,000.
+  const [groupCounts, setGroupCounts] = React.useState<Map<string, number>>(new Map());
+  const [collapsed, setCollapsed] = React.useState<Set<string>>(new Set());
+
+  const groupKey = groupBy?.field.key;
+  const groupDir = groupBy?.dir;
+  const countsKey = JSON.stringify({
+    f: config.filter,
+    s: debounced,
+    k: groupKey,
+    d: groupDir,
+  });
+
+  React.useEffect(() => {
+    if (!groupKey) {
+      setGroupCounts(new Map());
+      return;
+    }
+
+    let alive = true;
+    void fetch(`/api/tables/${table.id}/groups`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        spec: {
+          ...(config.filter ? { filter: config.filter } : {}),
+          ...(debounced ? { search: debounced } : {}),
+        },
+        field: groupKey,
+        dir: groupDir ?? "asc",
+      }),
+    })
+      .then((r) => (r.ok ? r.json() : { groups: [] }))
+      .then((b: { groups?: { value: unknown; count: number }[] }) => {
+        if (!alive) return;
+        setGroupCounts(
+          new Map((b.groups ?? []).map((g) => [groupKeyOf(g.value), Number(g.count)]))
+        );
+      })
+      .catch(() => alive && setGroupCounts(new Map()));
+
+    return () => {
+      alive = false;
+    };
+    // countsKey collapses the four things that actually change the answer; the
+    // filter object is rebuilt on every render and would otherwise refetch forever.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [countsKey, table.id]);
 
   const grid = useGrid({
     fields: visibleFields,
@@ -147,8 +237,28 @@ export function TableWorkspace({
   // slower than the next keystroke, which is why it's so unpleasant to find.
   useRealtime({
     tableId: table.id,
+    // MERGE `data`, don't replace it.
+    //
+    // The realtime payload is the raw `records` row, and `records.data` holds only
+    // STORED scalars. Every computed key — formula, rollup, lookup, count, and the
+    // createdBy/createdTime/modifiedBy/modifiedTime types — is merged in by
+    // swamp_query_records at query time and is simply not in that column. Replacing
+    // the record wholesale therefore blanked every one of them the moment anybody
+    // touched the row, until the next refetch. A formula column would empty itself
+    // while you watched a colleague type.
+    //
+    // ponytail: merged, not refetched. A merge keeps the last known computed value,
+    // which is exactly right for createdBy/createdTime (they never change) and
+    // briefly stale for formulas and modifiedTime after someone else's edit. The
+    // correct fix is to refetch the row when the table has computed fields, but
+    // that is a request per co-editor keystroke; if the staleness ever bites,
+    // that's the upgrade path.
     onUpsert: (record) =>
-      applyLocal((rs) => rs.map((r) => (r.id === record.id ? record : r))),
+      applyLocal((rs) =>
+        rs.map((r) =>
+          r.id === record.id ? { ...record, data: { ...r.data, ...record.data } } : r
+        )
+      ),
     onDelete: (id) => applyLocal((rs) => rs.filter((r) => r.id !== id)),
     onReload: reload,
   });
@@ -190,6 +300,54 @@ export function TableWorkspace({
         fieldId: f.id,
         show: !next.has(f.id),
         sortOrder: config.viewFields.find((vf) => vf.fieldId === f.id)?.sortOrder ?? i,
+      })),
+    });
+  };
+
+  /** Field order, per VIEW — which is the only order the grid actually reads.
+   *
+   *  There is a PATCH /api/tables/[id]/fields route that calls reorderFields(), and
+   *  it is the wrong tool: it writes `fields.sort_order`, per TABLE, while
+   *  orderedFields above sorts by `config.viewFields` and falls back to
+   *  fields.sortOrder only for a field with no view_fields row. Wiring a UI to that
+   *  route would appear to work on a fresh table and silently do NOTHING the moment
+   *  anyone hid a field or resized a column, because that writes a view_fields row
+   *  and the fallback stops applying. (NocoDB is per-view too — see
+   *  nc-gui/composables/useViewColumns.ts saveOrUpdate.) The route and reorderFields
+   *  are deleted in this commit rather than left as a trap.
+   *
+   *  `show` goes with every row on purpose. PostgREST's bulk upsert unions the keys
+   *  across the array, so a payload where only SOME rows carry `show` sends NULL for
+   *  the rest — which the NOT NULL would reject, taking the whole batch with it.
+   *  Homogeneous rows, like setHidden above. */
+  /** Group by a field, or stop.
+   *
+   *  Writes every field's row, homogeneously — saveViewFields batches by key
+   *  signature now, but sending the whole set is also what makes "only one field is
+   *  grouped" true rather than hoped for: the previous grouped field is explicitly
+   *  turned off rather than left behind. */
+  const setGroupBy = (next: { fieldId: string; dir: "asc" | "desc" } | null) => {
+    // Collapse state is keyed by GROUP VALUE, and the values change completely when
+    // you group by a different field. Keeping it would silently collapse unrelated
+    // groups that happened to share a key.
+    setCollapsed(new Set());
+
+    void patchConfig({
+      viewFields: fields.map((f) => ({
+        fieldId: f.id,
+        groupBy: next?.fieldId === f.id,
+        groupByOrder: next?.fieldId === f.id ? 0 : null,
+        groupByDir: next?.fieldId === f.id ? next.dir : null,
+      })),
+    });
+  };
+
+  const setFieldOrder = (orderedIds: string[]) => {
+    void patchConfig({
+      viewFields: orderedIds.map((id, i) => ({
+        fieldId: id,
+        show: !hidden.has(id),
+        sortOrder: i,
       })),
     });
   };
@@ -243,6 +401,28 @@ export function TableWorkspace({
 
   const expandedIndex = expandedId ? records.findIndex((r) => r.id === expandedId) : -1;
 
+  // A ?record= link that names a record this view isn't showing must SAY so.
+  //
+  // The grid holds a page, not the table, and the view has a filter — so a link
+  // can legitimately point at a record that is real and simply not here (further
+  // down the cursor, or filtered out). Without this, expandedIndex stays -1 and the
+  // dialog renders nothing: the link would once again do nothing at all and blame
+  // nobody, which is the bug this whole feature is fixing.
+  //
+  // ponytail: it says "not in this view" rather than going and fetching the record.
+  // Fetching one record by id needs a route that doesn't exist on the session API,
+  // and the honest message is most of the value. If people start hitting it, the
+  // upgrade path is that route.
+  const announcedMissing = React.useRef(false);
+  React.useEffect(() => {
+    if (!openRecordId || loading || announcedMissing.current) return;
+    if (records.some((r) => r.id === openRecordId)) return;
+
+    announcedMissing.current = true;
+    toast.info("That record isn't in this view — it may be filtered out.");
+    setExpandedId(null);
+  }, [openRecordId, loading, records]);
+
   // ── Kanban / gallery config ──
 
   const stackField = view.config.stackFieldId
@@ -295,6 +475,9 @@ export function TableWorkspace({
         onSortsChange={setSorts}
         hidden={hidden}
         onHiddenChange={setHidden}
+        onReorder={setFieldOrder}
+        groupBy={groupBy ? { fieldId: groupBy.field.id, dir: groupBy.dir } : null}
+        onGroupByChange={setGroupBy}
         rowHeight={rowHeight}
         onRowHeightChange={setRowHeight}
         search={search}
@@ -438,6 +621,22 @@ export function TableWorkspace({
           // rollups and lookups change too. Only the server knows the new values —
           // refetch rather than guess.
           onLinksChanged={reload}
+          groups={
+            groupBy
+              ? {
+                  fieldKey: groupBy.field.key,
+                  counts: groupCounts,
+                  collapsed,
+                  onToggle: (key) =>
+                    setCollapsed((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(key)) next.delete(key);
+                      else next.add(key);
+                      return next;
+                    }),
+                }
+              : undefined
+          }
           selected={selected}
           onSelectedChange={setSelected}
           active={grid.active}
@@ -483,6 +682,15 @@ export function TableWorkspace({
             if (row >= 0 && col >= 0) grid.setCell(row, col, value);
           }}
           onDelete={(id) => grid.deleteRecords([id])}
+          // A duplicate is just an insert of the same values. Nothing needs
+          // stripping here: the write path already refuses every read-only type
+          // (sanitizeValues -> isReadOnlyField), so the id, the timestamps, the
+          // createdBy/modifiedBy stamps, formulas, rollups and links all drop out on
+          // the server. Doing it here as well would be a second list to keep in step
+          // with the first, and the wrong one would be the one that let something
+          // through. Links are edges rather than values, so a copy does not carry
+          // them — NocoDB's duplicate does; ours is the smaller promise.
+          onDuplicate={(r) => grid.addRecord(r.data)}
           tableId={table.id}
           onLinksChanged={reload}
           currentUserId={userId}

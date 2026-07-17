@@ -13,6 +13,10 @@ export interface NavTable {
 
 export interface NavBase {
   id: string;
+  /** Carried so the sidebar can create a base next to the ones it's showing.
+   *  POST /api/bases needs a workspace, and this is the only place the tree
+   *  already knows one. */
+  workspaceId: string;
   name: string;
   tables: NavTable[];
 }
@@ -22,7 +26,7 @@ export async function listNav(): Promise<NavBase[]> {
 
   const { data: bases, error: basesError } = await db
     .from("bases")
-    .select("id, name, sort_order")
+    .select("id, workspace_id, name, sort_order")
     .is("deleted_at", null)
     .order("sort_order");
   if (basesError) throw new Error(`listNav bases: ${basesError.message}`);
@@ -44,6 +48,7 @@ export async function listNav(): Promise<NavBase[]> {
 
   return bases.map((b) => ({
     id: b.id as string,
+    workspaceId: b.workspace_id as string,
     name: b.name as string,
     tables: byBase.get(b.id as string) ?? [],
   }));

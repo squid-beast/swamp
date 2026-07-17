@@ -22,7 +22,7 @@ export default async function TablePage({
   searchParams,
 }: {
   params: { tableId: string };
-  searchParams: { view?: string };
+  searchParams: { view?: string; record?: string };
 }) {
   const supabase = createClient();
   const {
@@ -67,6 +67,10 @@ export default async function TablePage({
       tables={tables}
       userId={user.id}
       role={(role as Role) ?? null}
+      // ?record=… opens that record expanded. The expanded record's "Copy link"
+      // button has always produced this URL; nothing has ever read it, so the link
+      // it copied did nothing at all. This is the other half.
+      openRecordId={searchParams.record ?? null}
     />
   );
 }

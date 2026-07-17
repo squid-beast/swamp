@@ -137,3 +137,36 @@ describe("free-form types", () => {
     }
   });
 });
+
+describe("user", () => {
+  const f = { type: "user" } as ValidatableField;
+
+  it("accepts a uuid", () => {
+    expect(validateValue(f, "3f2504e0-4f89-11d3-9a0c-0305e82c3301").valid).toBe(true);
+  });
+
+  it("accepts several when the field holds several", () => {
+    expect(
+      validateValue(f, [
+        "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+        "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+      ]).valid
+    ).toBe(true);
+  });
+
+  it("rejects a word — `user` is writable through the public API", () => {
+    expect(validateValue(f, "banana").valid).toBe(false);
+  });
+
+  it("rejects one bad uuid hiding among good ones", () => {
+    expect(
+      validateValue(f, ["3f2504e0-4f89-11d3-9a0c-0305e82c3301", "nope"]).valid
+    ).toBe(false);
+  });
+
+  it("treats blank as cleared, not invalid", () => {
+    expect(validateValue(f, "").valid).toBe(true);
+    expect(validateValue(f, null).valid).toBe(true);
+    expect(validateValue(f, []).valid).toBe(true);
+  });
+});

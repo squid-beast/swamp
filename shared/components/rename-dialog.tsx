@@ -11,19 +11,27 @@ import {
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 
-// Controlled rename dialog: prefilled input, Enter or Save commits a trimmed,
-// non-empty, changed name. Used from the dataset "…" menu.
+// Controlled name dialog: prefilled input, Enter or Save commits a trimmed,
+// non-empty, changed name.
+//
+// It doubles as a CREATE prompt — pass initialName="" and nothing is "unchanged",
+// so the no-op guard below stays out of the way. That's why there's no separate
+// create dialog: the two differ by a placeholder and a button label, not behaviour.
 export function RenameDialog({
   open,
   onOpenChange,
   initialName,
-  title = "Rename dataset",
+  title = "Rename",
+  placeholder = "Name",
+  submitLabel = "Save",
   onSave,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   initialName: string;
   title?: string;
+  placeholder?: string;
+  submitLabel?: string;
   onSave: (name: string) => void | Promise<void>;
 }) {
   const [value, setValue] = React.useState(initialName);
@@ -60,14 +68,14 @@ export function RenameDialog({
             }
           }}
           onFocus={(e) => e.target.select()}
-          placeholder="Dataset name"
+          placeholder={placeholder}
         />
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
           <Button onClick={submit} disabled={!value.trim()}>
-            Save
+            {submitLabel}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -7,6 +7,8 @@ import {
   Eye,
   EyeOff,
   Filter as FilterIcon,
+  Group as GroupIcon,
+  GripVertical,
   Lock,
   Plus,
   Rows3,
@@ -69,6 +71,13 @@ export interface ToolbarProps {
   hidden: Set<string>; // field ids
   onHiddenChange: (next: Set<string>) => void;
 
+  /** New field order, per view. Ids in their new order. */
+  onReorder: (orderedIds: string[]) => void;
+
+  /** The field the view groups by, and which way. null = ungrouped. */
+  groupBy: { fieldId: string; dir: "asc" | "desc" } | null;
+  onGroupByChange: (next: { fieldId: string; dir: "asc" | "desc" } | null) => void;
+
   rowHeight: RowHeight;
   onRowHeightChange: (h: RowHeight) => void;
 
@@ -101,6 +110,9 @@ export function Toolbar(props: ToolbarProps) {
     onSortsChange,
     hidden,
     onHiddenChange,
+    onReorder,
+    groupBy,
+    onGroupByChange,
     rowHeight,
     onRowHeightChange,
     search,
@@ -113,6 +125,30 @@ export function Toolbar(props: ToolbarProps) {
 
   const filterCount = countLeaves(filter);
   const hiddenCount = hidden.size;
+
+  /** What can be grouped.
+   *
+   *  The same list swamp_group_counts enforces. A group is only useful if you can
+   *  then ask for its rows, and that ask is an `eq` filter — which is not a
+   *  membership test on a multiSelect or a link. If these two ever drift, the
+   *  database wins and the user gets an error rather than a wrong answer. */
+  const groupable = React.useMemo(
+    () =>
+      fields.filter((f) =>
+        [
+          "text", "longText", "email", "phone", "url", "uuid", "color",
+          "singleSelect", "status", "boolean",
+          "number", "currency", "percent", "rating", "year", "duration",
+          "date", "datetime", "time",
+          "formula", "lookup", "rollup", "count",
+          "createdBy", "modifiedBy", "createdTime", "modifiedTime",
+        ].includes(f.type)
+      ),
+    [fields]
+  );
+
+  /** The field being dragged in the Fields list, if any. */
+  const [dragging, setDragging] = React.useState<string | null>(null);
 
   return (
     <div className="flex flex-wrap items-center gap-1.5 border-b px-3 py-2">
@@ -132,6 +168,82 @@ export function Toolbar(props: ToolbarProps) {
           Locked
         </span>
       )}
+
+      {/* Group */}
+      <Popover>
+        <PopoverTrigger asChild>
+          <Button variant="ghost" size="sm" className="h-8 gap-1.5 text-[13px]">
+            <GroupIcon className="size-3.5" />
+            Group
+            {groupBy && (
+              <span className="max-w-24 truncate rounded bg-muted px-1 text-[11px]">
+                {fields.find((f) => f.id === groupBy.fieldId)?.name ?? "?"}
+              </span>
+            )}
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent align="start" className="w-64 p-2">
+          <div className="flex items-center justify-between px-1 pb-1.5">
+            <span className="text-[12px] text-muted-foreground">Group by</span>
+            {groupBy && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-1.5 text-[11px]"
+                disabled={!canEditConfig}
+                onClick={() => onGroupByChange(null)}
+              >
+                Clear
+              </Button>
+            )}
+          </div>
+
+          <Select
+            value={groupBy?.fieldId ?? ""}
+            onValueChange={(v) =>
+              onGroupByChange(v ? { fieldId: v, dir: groupBy?.dir ?? "asc" } : null)
+            }
+            disabled={!canEditConfig}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Pick a field" />
+            </SelectTrigger>
+            <SelectContent>
+              {groupable.length === 0 && (
+                <p className="px-2 py-1.5 text-[12px] text-muted-foreground">
+                  Nothing groupable in this view
+                </p>
+              )}
+              {groupable.map((f) => (
+                <SelectItem key={f.id} value={f.id}>
+                  {f.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {groupBy && (
+            <div className="mt-2 flex gap-1">
+              {(["asc", "desc"] as const).map((d) => (
+                <Button
+                  key={d}
+                  variant={groupBy.dir === d ? "secondary" : "ghost"}
+                  size="sm"
+                  className="h-7 flex-1 text-[12px]"
+                  disabled={!canEditConfig}
+                  onClick={() => onGroupByChange({ fieldId: groupBy.fieldId, dir: d })}
+                >
+                  {d === "asc" ? "A → Z" : "Z → A"}
+                </Button>
+              ))}
+            </div>
+          )}
+
+          <p className="px-1 pt-2 text-[11px] text-muted-foreground">
+            Groups count every matching record, not just the ones loaded.
+          </p>
+        </PopoverContent>
+      </Popover>
 
       {/* Fields */}
       <Popover>
@@ -177,15 +289,57 @@ export function Toolbar(props: ToolbarProps) {
             </div>
           </div>
 
+          {/* Drag to reorder. Native HTML5 drag, like kanban.tsx — the one drag in
+              the codebase already — rather than a new dependency for one list. */}
           <div className="max-h-72 overflow-auto">
-            {fields.map((f) => (
+            {fields.map((f, i) => (
               <label
                 key={f.id}
+                onDragOver={(e) => {
+                  if (!dragging || dragging === f.id) return;
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "move";
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  if (!dragging || dragging === f.id) return;
+                  const ids = fields.map((x) => x.id);
+                  const from = ids.indexOf(dragging);
+                  if (from === -1) return;
+                  ids.splice(from, 1);
+                  // Recompute the target index AFTER the removal, or dragging a
+                  // field downwards lands it one place short of where it was let go.
+                  ids.splice(ids.indexOf(f.id) + (from < i ? 1 : 0), 0, dragging);
+                  onReorder(ids);
+                  setDragging(null);
+                }}
                 className={cn(
                   "flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-[13px] hover:bg-muted",
-                  f.isPrimary && "opacity-60"
+                  f.isPrimary && "opacity-60",
+                  dragging === f.id && "opacity-40"
                 )}
               >
+                {/* The GRIP is the drag handle, not the whole row.
+                    Making the <label> draggable broke the checkbox inside it — the
+                    browser treats the mousedown as a possible drag start and the
+                    toggle never fires, so you could reorder fields but no longer
+                    hide one. NocoDB drags by the grip too (FieldsMenu.vue). */}
+                {canEditConfig && (
+                  <span
+                    draggable
+                    onDragStart={(e) => {
+                      setDragging(f.id);
+                      e.dataTransfer.effectAllowed = "move";
+                      // Firefox refuses to start a drag with no payload.
+                      e.dataTransfer.setData("text/plain", f.id);
+                    }}
+                    onDragEnd={() => setDragging(null)}
+                    className="shrink-0 cursor-grab active:cursor-grabbing"
+                    aria-label={`Reorder ${f.name}`}
+                  >
+                    <GripVertical className="size-3 text-muted-foreground/50" />
+                  </span>
+                )}
                 <input
                   type="checkbox"
                   checked={!hidden.has(f.id)}

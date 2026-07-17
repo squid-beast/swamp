@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
-import { GripVertical, Loader2, Maximize2, Plus, Settings2 } from "lucide-react";
+import { ChevronDown, ChevronRight, GripVertical, Loader2, Maximize2, Plus, Settings2 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/button";
 import { Checkbox } from "@/shared/ui/checkbox";
@@ -34,9 +34,74 @@ import { CellView } from "./cell";
 // canvas renderer can be swapped in later without touching anything above it.
 // ════════════════════════════════════════════════════════════════════════════
 
+/** One stable string per group.
+ *
+ *  null and "" are the SAME group — "no status" is one bucket, not two, and a user
+ *  cannot tell them apart anyway. Everything else is keyed by its JSON, so 0 and
+ *  "0" stay distinct (they sort differently and mean different things).
+ *
+ *  Grouping is restricted to scalars in SQL (swamp_group_counts) precisely so this
+ *  stays honest: a jsonb array would key by its serialisation and read as one
+ *  bucket per exact combination of tags. */
+export function groupKeyOf(value: unknown): string {
+  if (value === null || value === undefined || value === "") return "\u0000empty";
+  return JSON.stringify(value);
+}
+
+function GroupHeader({
+  value,
+  count,
+  collapsed,
+  onToggle,
+  style,
+}: {
+  value: unknown;
+  count?: number;
+  collapsed: boolean;
+  onToggle: () => void;
+  style: React.CSSProperties;
+}) {
+  const label =
+    value === null || value === undefined || value === ""
+      ? "Empty"
+      : typeof value === "boolean"
+        ? value ? "Yes" : "No"
+        : String(value);
+
+  return (
+    <div
+      className="absolute left-0 top-0 flex w-full min-w-full items-center border-b bg-muted/40 backdrop-blur"
+      style={style}
+      data-testid="group-header"
+    >
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={!collapsed}
+        className="sticky left-0 flex items-center gap-1.5 px-3 py-1 text-[12px] font-medium outline-none hover:text-foreground"
+      >
+        {collapsed ? (
+          <ChevronRight className="size-3.5 text-muted-foreground" />
+        ) : (
+          <ChevronDown className="size-3.5 text-muted-foreground" />
+        )}
+        <span className="truncate">{label}</span>
+        {/* The count is the FILTERED count from the server, not what is loaded —
+            counting the window would report "3" for a group of 3,000. */}
+        {count !== undefined && (
+          <span className="rounded bg-muted px-1 tabular-nums text-muted-foreground">
+            {count}
+          </span>
+        )}
+      </button>
+    </div>
+  );
+}
+
 const ROW_HEIGHTS = { short: 36, medium: 56, tall: 88, extra: 128 } as const;
 export type RowHeight = keyof typeof ROW_HEIGHTS;
 
+const GROUP_HEADER_PX = 32;
 const GUTTER_WIDTH = 88;
 const DEFAULT_COL_WIDTH = 180;
 const MIN_COL_WIDTH = 80;
@@ -62,6 +127,17 @@ export interface GridProps {
 
   selected: Set<string>;
   onSelectedChange: (next: Set<string>) => void;
+
+  /** Group headers to interleave. Undefined = ungrouped, and every code path below
+   *  behaves exactly as it did. */
+  groups?: {
+    /** The field the rows are sorted by, so a header goes where the value changes. */
+    fieldKey: string;
+    /** value -> record count, over the FILTERED set. From swamp_group_counts. */
+    counts: Map<string, number>;
+    collapsed: Set<string>;
+    onToggle: (key: string) => void;
+  };
 
   // Interaction, owned by useGrid.
   active: CellRef | null;
@@ -110,10 +186,39 @@ export function Grid(props: GridProps) {
     onCommitFill,
     onDeleteRecords,
     onMoveRecord,
+    groups,
   } = props;
 
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const rowPx = ROW_HEIGHTS[rowHeight] ?? ROW_HEIGHTS.short;
+
+  // When an editor closes, focus comes back to the grid.
+  //
+  // The keyboard handler lives on scrollRef, so a grid without focus has no undo,
+  // no arrows, no Delete. Closing an editor unmounts its <input> (CellView renders a
+  // <span> once `editing` is false), and an unmounting element does not hand its
+  // focus anywhere — it lands on <body>. So Cmd+Z straight after typing did nothing,
+  // which is precisely when you reach for it.
+  //
+  // ── Why an effect, and not a callback in onEditingChange ──
+  //
+  // Because focusing from there would blur an input that is STILL MOUNTED, and
+  // TextCell commits on blur (cell.tsx:217). On Escape the sequence is
+  // setDraft(original) → onEditingChange(false), so a synchronous focus() fires
+  // blur → commit() while the closure still holds the abandoned draft — Escape
+  // would commit the very edit it was reverting. An effect runs after the DOM is
+  // updated, when the input is already gone and there is nothing left to blur.
+  //
+  // The activeElement check keeps this to its actual job: reclaim focus only when
+  // the unmount dropped it on the floor. If the user closed the editor by clicking
+  // the toolbar, focus belongs to the toolbar and must stay there.
+  const wasEditing = React.useRef(editing);
+  React.useEffect(() => {
+    if (wasEditing.current && !editing && document.activeElement === document.body) {
+      scrollRef.current?.focus();
+    }
+    wasEditing.current = editing;
+  }, [editing]);
 
   // Drag state. Refs, not state: these fire on every mousemove, and a setState per
   // pixel would make the drag feel like treacle.
@@ -124,10 +229,45 @@ export function Grid(props: GridProps) {
   const [dropRow, setDropRow] = React.useState<number | null>(null);
   const resizing = React.useRef<{ fieldId: string; startX: number; startW: number } | null>(null);
 
+  // What the virtualiser actually renders: rows, with a header wherever the group
+  // value changes.
+  //
+  // Headers are derived FROM THE STREAM rather than from the group list, and that
+  // is the load-bearing choice. The rows arrive sorted by the group field (the spec
+  // puts it first), so "the value changed" is exactly "a new group starts" — and it
+  // stays right mid-pagination. Laying out the group list first and slotting rows
+  // under each header looks equivalent and isn't: page one may hold only the first
+  // group's rows, and every other header would bunch up beneath it.
+  //
+  // ponytail: a COLLAPSED group's rows are still fetched, just not rendered. Making
+  // collapse skip them server-side means adding a `neq` filter per collapsed group,
+  // which then has to be kept out of the group counts — real work for a table big
+  // enough to notice. If someone collapses a 50k-row group and scrolling gets
+  // sticky, that's the upgrade path.
+  const items = React.useMemo(() => {
+    const out: ({ kind: "header"; value: unknown; key: string } | { kind: "row"; i: number })[] = [];
+    if (!groups) {
+      for (let i = 0; i < records.length; i += 1) out.push({ kind: "row", i });
+      return out;
+    }
+
+    let last: string | null = null;
+    for (let i = 0; i < records.length; i += 1) {
+      const value = records[i].data[groups.fieldKey];
+      const key = groupKeyOf(value);
+      if (key !== last) {
+        out.push({ kind: "header", value, key });
+        last = key;
+      }
+      if (!groups.collapsed.has(key)) out.push({ kind: "row", i });
+    }
+    return out;
+  }, [records, groups]);
+
   const rowVirtualizer = useVirtualizer({
-    count: records.length,
+    count: items.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => rowPx,
+    estimateSize: (i) => (items[i]?.kind === "header" ? GROUP_HEADER_PX : rowPx),
     overscan: 12,
   });
 
@@ -265,9 +405,29 @@ export function Grid(props: GridProps) {
           className="relative"
         >
           {virtualRows.map((v: VirtualItem) => {
-            const record = records[v.index];
+            const item = items[v.index];
+
+            if (item.kind === "header") {
+              const count = groups?.counts.get(item.key);
+              const isCollapsed = !!groups?.collapsed.has(item.key);
+              return (
+                <GroupHeader
+                  key={`g:${item.key}`}
+                  value={item.value}
+                  count={count}
+                  collapsed={isCollapsed}
+                  onToggle={() => groups?.onToggle(item.key)}
+                  style={{ height: v.size, transform: `translateY(${v.start}px)` }}
+                />
+              );
+            }
+
+            // From here down `rowIndex` meant "which record" — it now means "which
+            // item", so rebind once rather than touch nineteen call sites.
+            const rowIndex = item.i;
+            const record = records[rowIndex];
             const isSelected = selected.has(record.id);
-            const isDropTarget = dropRow === v.index;
+            const isDropTarget = dropRow === rowIndex;
 
             return (
               <div
@@ -275,7 +435,7 @@ export function Grid(props: GridProps) {
                 className={cn(
                   "group absolute left-0 top-0 grid border-b hover:bg-muted/30",
                   isSelected && "bg-muted/50",
-                  dragRow === v.index && "opacity-40",
+                  dragRow === rowIndex && "opacity-40",
                   isDropTarget && "border-t-2 border-t-brand"
                 )}
                 style={{
@@ -288,11 +448,11 @@ export function Grid(props: GridProps) {
                 onDragOver={(e) => {
                   if (dragRow === null) return;
                   e.preventDefault();
-                  setDropRow(v.index);
+                  setDropRow(rowIndex);
                 }}
                 onDrop={() => {
-                  if (dragRow !== null && dragRow !== v.index) {
-                    onMoveRecord(dragRow, v.index);
+                  if (dragRow !== null && dragRow !== rowIndex) {
+                    onMoveRecord(dragRow, rowIndex);
                   }
                   setDragRow(null);
                   setDropRow(null);
@@ -303,7 +463,7 @@ export function Grid(props: GridProps) {
                 <div className="group/gutter flex items-center gap-0.5 border-r px-1.5 text-[12px] tabular-nums text-muted-foreground">
                   <span
                     draggable
-                    onDragStart={() => setDragRow(v.index)}
+                    onDragStart={() => setDragRow(rowIndex)}
                     onDragEnd={() => {
                       setDragRow(null);
                       setDropRow(null);
@@ -320,7 +480,7 @@ export function Grid(props: GridProps) {
                       isSelected && "hidden"
                     )}
                   >
-                    {v.index + 1}
+                    {rowIndex + 1}
                   </span>
                   <span
                     className={cn(
@@ -331,14 +491,14 @@ export function Grid(props: GridProps) {
                     <Checkbox
                       checked={isSelected}
                       onCheckedChange={() => toggle(record.id)}
-                      aria-label={`Select row ${v.index + 1}`}
+                      aria-label={`Select row ${rowIndex + 1}`}
                     />
                   </span>
 
                   <button
                     onClick={() => onExpand(record.id)}
                     className="ml-auto opacity-0 group-hover/gutter:opacity-100"
-                    aria-label={`Expand row ${v.index + 1}`}
+                    aria-label={`Expand row ${rowIndex + 1}`}
                     data-testid="expand-row"
                   >
                     <Maximize2 className="size-3" />
@@ -347,9 +507,9 @@ export function Grid(props: GridProps) {
 
                 {/* Cells */}
                 {fields.map((f, col) => {
-                  const isActive = active?.row === v.index && active?.col === col;
+                  const isActive = active?.row === rowIndex && active?.col === col;
                   const selectedCell =
-                    inRange(range, v.index, col) || inRange(fillTarget, v.index, col);
+                    inRange(range, rowIndex, col) || inRange(fillTarget, rowIndex, col);
                   const readOnly = isReadOnlyField(f.type);
 
                   // The fill handle sits on the bottom-right of the selection —
@@ -361,33 +521,42 @@ export function Grid(props: GridProps) {
                       }
                     : active;
                   const showHandle =
-                    !readOnly && anchor?.row === v.index && anchor?.col === col;
+                    !readOnly && anchor?.row === rowIndex && anchor?.col === col;
 
                   return (
                     <ContextMenu key={f.id}>
                       <ContextMenuTrigger asChild>
                         <div
                           onMouseDown={(e) => {
+                            // Focus FIRST, before the right-click bail below.
+                            //
+                            // The grid's keyboard handler lives on scrollRef, so an
+                            // unfocused grid has no undo, no arrows, no Delete. This
+                            // used to sit at the end of the handler, under the early
+                            // return — so right-click → "Delete row" left focus on
+                            // <body> and Cmd+Z afterwards went nowhere. The one moment
+                            // you most want undo is right after a delete.
+                            scrollRef.current?.focus();
+
                             if (e.button !== 0) return; // right-click opens the menu, doesn't select
-                            setActive({ row: v.index, col });
+                            setActive({ row: rowIndex, col });
                             setEditing(false);
 
                             if (e.shiftKey && active) {
-                              setRange({ from: active, to: { row: v.index, col } });
+                              setRange({ from: active, to: { row: rowIndex, col } });
                             } else {
                               setRange(null);
                               selecting.current = true;
                             }
-                            scrollRef.current?.focus();
                           }}
                           onMouseEnter={() => {
                             if (selecting.current && active) {
-                              setRange({ from: active, to: { row: v.index, col } });
+                              setRange({ from: active, to: { row: rowIndex, col } });
                             }
                             if (filling.current && range) {
                               setFillTarget({
                                 from: range.from,
-                                to: { row: v.index, col: Math.max(range.from.col, range.to.col) },
+                                to: { row: rowIndex, col: Math.max(range.from.col, range.to.col) },
                               });
                             }
                           }}
@@ -405,7 +574,7 @@ export function Grid(props: GridProps) {
                             value={record.data[f.key]}
                             editing={isActive && editing}
                             onEditingChange={setEditing}
-                            onChange={(next) => onSetCell(v.index, col, next)}
+                            onChange={(next) => onSetCell(rowIndex, col, next)}
                             recordId={record.id}
                             tableId={tableId}
                             onLinksChanged={onLinksChanged}
@@ -436,7 +605,7 @@ export function Grid(props: GridProps) {
                         </ContextMenuItem>
                         <ContextMenuItem
                           disabled={readOnly}
-                          onClick={() => onSetCell(v.index, col, null)}
+                          onClick={() => onSetCell(rowIndex, col, null)}
                         >
                           Clear cell
                         </ContextMenuItem>

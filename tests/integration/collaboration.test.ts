@@ -482,3 +482,72 @@ describe("realtime", () => {
     }
   });
 });
+
+// ─── Profile visibility ─────────────────────────────────────────────────────
+
+describe("member profiles", () => {
+  // The bug this pins down: "profiles: read own" (init.sql:19) is
+  // `using (auth.uid() = id)`, so nobody could read a co-member's profile row.
+  // listMembers (collaboration.ts:230) maps over `profiles ?? []`, so a member
+  // whose profile was unreadable was DROPPED — the members panel listed exactly
+  // one person, you. Comments and history degraded more quietly, to "Someone".
+  //
+  // The fix is a SECURITY DEFINER function rather than a wider policy on the
+  // table, because profiles carries `dob` and a co-worker has no business with
+  // your date of birth. So the test is in two halves: you CAN see a co-member's
+  // name, and you CANNOT see their birthday.
+  it("a co-member's profile is visible through swamp_visible_profiles", async () => {
+    must(
+      await alice.db
+        .from("base_members")
+        .upsert({ base_id: baseId, user_id: bob.id, role: "editor" })
+    );
+
+    const { data, error } = await alice.db.rpc("swamp_visible_profiles", {
+      p_user_ids: [bob.id],
+    });
+
+    expect(error).toBeNull();
+    expect(data).toHaveLength(1);
+    expect(data![0].id).toBe(bob.id);
+    expect(data![0].email).toBe(bob.email);
+  });
+
+  it("does not expose a co-member's date of birth", async () => {
+    const { data } = await alice.db.rpc("swamp_visible_profiles", {
+      p_user_ids: [bob.id],
+    });
+
+    // Not "dob is null" — the column must not be in the shape at all.
+    expect(Object.keys(data![0])).not.toContain("dob");
+    expect(Object.keys(data![0]).sort()).toEqual(
+      ["avatar_url", "email", "first_name", "id", "last_name"].sort()
+    );
+  });
+
+  it("a stranger's profile stays invisible", async () => {
+    const stranger = await createUser();
+    try {
+      const { data } = await alice.db.rpc("swamp_visible_profiles", {
+        p_user_ids: [stranger.id],
+      });
+      // Sharing no workspace and no base with Alice, they must not resolve.
+      expect(data).toEqual([]);
+    } finally {
+      await deleteUser(stranger);
+    }
+  });
+
+  it("you can always resolve yourself", async () => {
+    const { data } = await alice.db.rpc("swamp_visible_profiles", {
+      p_user_ids: [alice.id],
+    });
+    expect(data).toHaveLength(1);
+    expect(data![0].id).toBe(alice.id);
+  });
+
+  it("the raw profiles table still refuses a co-member — the function is the only door", async () => {
+    const { data } = await alice.db.from("profiles").select("id").eq("id", bob.id);
+    expect(data).toEqual([]);
+  });
+});

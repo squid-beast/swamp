@@ -24,6 +24,13 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: 0,
   workers: 1,
+  // 60s, not the 30s default. These run against `npm run dev`, where a route
+  // COMPILES on its first request. globalSetup warms the routes so no single test
+  // pays that bill, and this is the margin for the rest of the dev-mode tax.
+  timeout: 60_000,
+  // Compile the routes once, up front. Without it the cold-start cost lands on
+  // whichever test touches a route first, and the failure moves around run to run.
+  globalSetup: "./tests/e2e/warm.ts",
   reporter: [["list"]],
   use: {
     baseURL: BASE_URL,

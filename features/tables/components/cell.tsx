@@ -14,6 +14,8 @@ import { isReadOnlyField, type Field } from "../types";
 import { LinkCell } from "./link-cell";
 import { AttachmentCell } from "./attachment-cell";
 import { ButtonCell } from "./button-cell";
+import { UserCell } from "./user-cell";
+import { BarcodeCell } from "./barcode-cell";
 
 // ════════════════════════════════════════════════════════════════════════════
 // One cell.
@@ -97,6 +99,30 @@ export function CellView({
   // would otherwise render it as text.
   if (field.type === "button" && recordId) {
     return <ButtonCell field={field} recordId={recordId} value={value} />;
+  }
+
+  // A barcode/QR holds no value of its own — it draws the field it points at, and
+  // `value` here is already that field's value (the catalog resolves the pointer).
+  // Before the read-only check below, or it renders as the raw source text.
+  if (field.type === "barcode" || field.type === "qr") {
+    return <BarcodeCell field={field} value={value} />;
+  }
+
+  // PEOPLE. All three hold a uuid and have to show a name, so they share a cell.
+  //
+  // createdBy/modifiedBy are read-only — the database stamps them and refuses a
+  // write (swamp_actor(), and `new.created_by = old.created_by` makes authorship
+  // un-forgeable). They still have to be handled BEFORE the read-only check below,
+  // or they render as a raw uuid, which means nothing to anyone.
+  if (field.type === "user" || field.type === "createdBy" || field.type === "modifiedBy") {
+    return (
+      <UserCell
+        field={field}
+        value={value}
+        onChange={onChange}
+        editable={field.type === "user"}
+      />
+    );
   }
 
   // Computed fields have no value in `data` and can never be written directly.
@@ -212,7 +238,15 @@ function formatDisplay(field: Field, value: unknown): string {
   if (!s) return "";
 
   if (field.type === "currency") {
-    const n = Number(s.replace(/[^0-9.eE+-]/g, ""));
+    // Strip the money furniture ($ , £ and friends) so "$1,000.00" formats, but
+    // notice when stripping left NOTHING.
+    //
+    // `Number("")` is 0, not NaN — so "N/A" became "" became 0 and rendered as
+    // $0.00. The guard below has always been here and has never once fired for the
+    // value it names: the cell invented the exact number the comment forbids, and a
+    // reader of the grid saw zero where the data says "not applicable".
+    const cleaned = s.replace(/[^0-9.eE+-]/g, "");
+    const n = cleaned === "" ? NaN : Number(cleaned);
     if (Number.isNaN(n)) return s; // "N/A" stays "N/A" — don't invent a number
     return new Intl.NumberFormat(undefined, {
       style: "currency",
@@ -461,6 +495,24 @@ function ReadOnly({ field, value }: { field: Field; value: unknown }) {
 
   if (value == null || value === "") {
     return <Minus className="size-3.5 text-muted-foreground/30" />;
+  }
+
+  // createdTime/modifiedTime arrive as the raw timestamptz the database stamped
+  // ("2026-07-16T17:02:44.282397+00:00"). Rendering that verbatim is technically a
+  // value and practically unreadable, so format it the way the writable date cells
+  // already do.
+  if (field.type === "createdTime" || field.type === "modifiedTime") {
+    const d = new Date(str(value));
+    if (!Number.isNaN(d.getTime())) {
+      return (
+        <span
+          className="block truncate text-[13px] tabular-nums text-muted-foreground"
+          title={d.toISOString()}
+        >
+          {d.toLocaleString()}
+        </span>
+      );
+    }
   }
 
   return (

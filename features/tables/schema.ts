@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { FIELD_TYPES, TOKEN_SCOPES, WEBHOOK_EVENTS } from "./types";
+import { BARCODE_FORMATS, FIELD_TYPES, TOKEN_SCOPES, WEBHOOK_EVENTS } from "./types";
 
 // ════════════════════════════════════════════════════════════════════════════
 // Wire schemas. Everything a client can send, validated before it reaches the
@@ -27,6 +27,13 @@ export const fieldOptionsSchema = z
     currency: z.string(),
     precision: z.number().int().min(0).max(8),
     max: z.number().int().min(1).max(10),
+
+    // user
+    allowMultiple: z.boolean(),
+
+    // barcode | qr
+    sourceFieldId: z.string().uuid(),
+    barcodeFormat: z.enum(BARCODE_FORMATS),
 
     targetTableId: z.string().uuid(),
     cardinality: z.enum(["one", "many"]),

@@ -87,6 +87,21 @@ export function validateValue(field: ValidatableField, value: unknown): Validati
       const bogus = s.split(",").map((t) => t.trim()).filter((t) => t && !allowed.has(t));
       return bogus.length ? bad(`Not allowed: ${bogus.join(", ")}`) : OK;
     }
+    case "user": {
+      // Shape only — is this a uuid? Whether the uuid is a MEMBER is a question
+      // this function cannot answer: it is sync, pure, shared with the grid, and
+      // has no database. That check would need a roster lookup per keystroke.
+      //
+      // Shape is still worth enforcing, because `user` is writable through the
+      // public API (PATCH /api/v1/.../records with a records:write token), and
+      // without this "banana" lands in a column that means a person. A non-member
+      // uuid renders as "Someone", which is wrong but legible; a word renders as
+      // "Someone" too, and silently.
+      const ids = Array.isArray(value) ? value : [value];
+      return ids.every((v) => typeof v === "string" && RE.uuid.test(v.trim()))
+        ? OK
+        : bad("Pick a member");
+    }
     default:
       return OK; // text, longText, duration — free-form
   }

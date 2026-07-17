@@ -1,5 +1,14 @@
+import { randomUUID } from "crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { anon, createUser, deleteUser, must, workspaceOf, type TestUser } from "./harness";
+import {
+  admin,
+  anon,
+  createUser,
+  deleteUser,
+  must,
+  workspaceOf,
+  type TestUser,
+} from "./harness";
 
 // ════════════════════════════════════════════════════════════════════════════
 // API tokens — written adversarially.
@@ -180,6 +189,102 @@ describe("a read token", () => {
       .is("deleted_at", null);
 
     expect(count).toBe(2);
+  });
+});
+
+describe("a write tells you what it computed", () => {
+  // The REST API's write response used to return `r.data` raw — the stored scalars and
+  // nothing else. Every computed field is projected at READ time and is not a key in
+  // `data` at all, so a caller who patched Amount got back a record with no Doubled in
+  // it. Their choices were to believe a response that was missing the value they had
+  // just changed, or to GET the row again and race whoever else was editing it.
+  //
+  // The grid got this fixed; these tests are the other client — the one with no screen
+  // to notice on.
+  let fTableId: string;
+  let doubledOk: boolean;
+
+  beforeAll(async () => {
+    const t = must(
+      await alice.db.from("tables").insert({ base_id: baseId, name: "Computed" }).select().single()
+    ) as { id: string };
+    fTableId = t.id;
+
+    const amount = must(
+      await alice.db
+        .from("fields")
+        .insert({
+          table_id: fTableId, base_id: baseId,
+          name: "Amount", key: "fld_amt", type: "number", is_primary: true, sort_order: 1,
+        })
+        .select()
+        .single()
+    ) as { id: string };
+
+    // Amount * 2. Referenced by field ID, which is what makes a formula rename-safe.
+    const { error } = await alice.db.from("fields").insert({
+      table_id: fTableId, base_id: baseId,
+      name: "Doubled", key: "fld_doubled", type: "formula", is_primary: false, sort_order: 2,
+      options: { ast: { t: "bin", op: "*", l: { t: "field", id: amount.id }, r: { t: "num", v: 2 } } },
+    });
+    doubledOk = !error;
+  });
+
+  it("returns computed fields from an INSERT", async () => {
+    expect(doubledOk, "formula field setup failed").toBe(true);
+    const token = await mint(alice, baseId, ["records:read", "records:write"]);
+
+    const { data, error } = await pub().rpc("swamp_api_insert", {
+      p_token: token,
+      p_table_id: fTableId,
+      p_records: [{ fields: { fld_amt: 21 } }],
+    });
+
+    expect(error).toBeNull();
+    const rows = data as { id: string; fields: Record<string, unknown> }[];
+    expect(rows).toHaveLength(1);
+    expect(rows[0].fields.fld_amt).toBe(21);
+    // The whole point: the formula came back with the row that caused it.
+    expect(Number(rows[0].fields.fld_doubled)).toBe(42);
+  });
+
+  it("returns RECOMPUTED fields from a PATCH", async () => {
+    expect(doubledOk, "formula field setup failed").toBe(true);
+    const token = await mint(alice, baseId, ["records:read", "records:write"]);
+
+    const inserted = must(
+      await pub().rpc("swamp_api_insert", {
+        p_token: token, p_table_id: fTableId, p_records: [{ fields: { fld_amt: 5 } }],
+      })
+    ) as { id: string; fields: Record<string, unknown> }[];
+
+    const { data, error } = await pub().rpc("swamp_api_patch", {
+      p_token: token,
+      p_table_id: fTableId,
+      p_records: [{ id: inserted[0].id, fields: { fld_amt: 50 } }],
+    });
+
+    expect(error).toBeNull();
+    const rows = data as { id: string; fields: Record<string, unknown> }[];
+    // 100, not 10: recomputed AFTER the write. Computing first would hand back the old
+    // Doubled for the new Amount, which is worse than omitting it.
+    expect(Number(rows[0].fields.fld_doubled)).toBe(100);
+  });
+
+  it("costs a table with no computed fields nothing extra", async () => {
+    // swamp_computed_values returns '[]' after one catalog read when there is nothing
+    // to compute, so the ordinary table keeps its plain response shape.
+    const token = await mint(alice, baseId, ["records:read", "records:write"]);
+
+    const { data, error } = await pub().rpc("swamp_api_insert", {
+      p_token: token,
+      p_table_id: tableId, // the plain Deals table from the top of this file
+      p_records: [{ fields: { fld_name: "Plain" } }],
+    });
+
+    expect(error).toBeNull();
+    const rows = data as { id: string; fields: Record<string, unknown> }[];
+    expect(rows[0].fields.fld_name).toBe("Plain");
   });
 });
 
@@ -445,15 +550,156 @@ describe("anon has no way in except through these functions", () => {
     expect(error).not.toBeNull();
   });
 
-  it("cannot call the internals the API functions are built from", async () => {
-    // swamp_token_context resolves a token without checking a scope. Reachable
-    // directly, it would be a way to skip the check the API functions exist to do.
-    const { error } = await pub().rpc("swamp_token_context", { p_token: "anything" });
-    expect(error).not.toBeNull();
+  // This block used to be one test that passed for the wrong reason, for two years.
+  //
+  // It called swamp_token_context with p_token: "anything" and asserted an error came
+  // back. An error always came back — 'swamp: invalid API token' — whether or not anon
+  // held EXECUTE. So it proved the token check works, while claiming to prove the
+  // grant was gone. The grant was NOT gone: `revoke ... from anon` (platform.sql:1757)
+  // never removed PUBLIC's default EXECUTE, and anon inherits it through PUBLIC. anon
+  // could call every one of these the whole time this test was green.
+  //
+  // A permission test must therefore assert on the PERMISSION. has_function_privilege
+  // resolves PUBLIC membership, which is the exact thing the original revoke missed.
+  // The assertion is on PERMISSION DENIED specifically, and that word is the whole
+  // point. "Some error came back" is what passed while the door was open; only
+  // "permission denied" can distinguish a closed door from a working inner guard.
+  it("is refused EXECUTE on the internals the API functions are built from", async () => {
+    const internals: [string, Record<string, unknown>][] = [
+      // Resolves a token without checking a scope.
+      ["swamp_token_context", { p_token: "anything" }],
+      // The scope check itself.
+      ["swamp_api_require", { p_token: "x", p_scope: "records:read", p_min: "viewer" }],
+      // Trusts a caller-supplied ctx — see the baseId test below.
+      ["swamp_api_table", { p_ctx: {}, p_table_id: tableId }],
+      // Anyone's role in any base.
+      ["swamp_base_role_of", { p_base_id: baseId, p_user_id: alice.id }],
+      ["swamp_accept_invite", { p_token: "anything" }],
+    ];
+
+    for (const [fn, params] of internals) {
+      const { error } = await pub().rpc(fn, params);
+      expect(error?.message, `anon can still reach ${fn}`).toMatch(/permission denied/i);
+    }
+  });
+
+  it("still reaches the functions that are anon BY DESIGN", async () => {
+    // The half that makes the revokes safe to trust. Share links, form submission and
+    // the token-authed REST API are all reached with no session — their credential is
+    // the share id or the token, never the anon key. Each must fail on its OWN guard
+    // (bad token / no such share), never on permission.
+    const publicSurface: [string, Record<string, unknown>][] = [
+      ["swamp_api_meta", { p_token: "bogus" }],
+      ["swamp_api_query", { p_token: "bogus", p_table_id: tableId, p_spec: {} }],
+      ["swamp_shared_meta", { p_share_id: "bogus", p_password: "" }],
+    ];
+
+    for (const [fn, params] of publicSurface) {
+      const { error } = await pub().rpc(fn, params);
+      expect(error, `${fn} should still reject a bogus credential`).not.toBeNull();
+      expect(error?.message, `anon LOST ${fn} — the public API needs it`).not.toMatch(
+        /permission denied/i
+      );
+    }
+  });
+
+  it("cannot read another tenant's table by omitting the baseId", async () => {
+    // swamp_api_table's guard was `v_t.base_id <> (p_ctx->>'baseId')::uuid`. p_ctx is
+    // caller-supplied: with '{}' the right operand is NULL, `<>` yields NULL, `if NULL`
+    // does not fire, and the row came back — to an anon caller holding no token at all.
+    // A WRONG baseId was rejected; a MISSING one was waved through.
+    //
+    // Both halves are fixed, so assert both. The grant is the outer door:
+    const { error } = await pub().rpc("swamp_api_table", { p_ctx: {}, p_table_id: tableId });
+    expect(error?.message).toMatch(/permission denied/i);
+
+    // ...and the guard is the inner one, which must hold even for a caller who is
+    // allowed in. A token-holding caller reaches this function through swamp_api_meta
+    // and friends, and an empty ctx must not open someone else's base to them either.
+    const token = await mint(alice, baseId, ["records:read"]);
+    const { error: crossTenant } = await pub().rpc("swamp_api_query", {
+      p_token: token,
+      p_table_id: malloryTableId,
+      p_spec: {},
+    });
+    expect(crossTenant?.message).toMatch(/no such table/i);
   });
 
   it("cannot read a token row to look for a hash to crack", async () => {
     const { error } = await pub().from("api_tokens").select("token_hash").limit(1);
     expect(error).not.toBeNull();
+  });
+});
+
+// ─── Scopes must be real ────────────────────────────────────────────────────
+
+describe("token scopes", () => {
+  // There were five scopes and only two were ever enforced: every
+  // swamp_api_require call in platform.sql asks for records:read or
+  // records:write. schema:read, webhooks:read and webhooks:write were read by
+  // nothing — a schema:read-only token could not even call /api/v1/meta (which
+  // requires records:read), so it could do nothing at all, and no v1 webhook
+  // endpoint exists for the other two to govern.
+  //
+  // A checkbox that grants nothing is worse than a missing feature: it reads as a
+  // security control, so someone hands out a "schema:read only" token believing
+  // it is narrow. These tests exist to stop the dead scopes coming back without
+  // the endpoint that would honour them.
+  it("refuses to mint a token with a scope nothing enforces", async () => {
+    await expect(mint(alice, baseId, ["schema:read"])).rejects.toThrow();
+    await expect(mint(alice, baseId, ["webhooks:read"])).rejects.toThrow();
+    await expect(mint(alice, baseId, ["webhooks:write"])).rejects.toThrow();
+  });
+
+  it("refuses a dead scope even when smuggled in beside a live one", async () => {
+    await expect(mint(alice, baseId, ["records:read", "schema:read"])).rejects.toThrow();
+  });
+
+  it("refuses a token with no scopes at all", async () => {
+    // Guarded at the MINT path (swamp_create_token), deliberately not by a CHECK
+    // constraint — see the test below for why that distinction is load-bearing.
+    await expect(mint(alice, baseId, [])).rejects.toThrow();
+  });
+
+  it("still mints the two that are real", async () => {
+    await expect(mint(alice, baseId, ["records:read"])).resolves.toMatch(/./);
+    await expect(mint(alice, baseId, ["records:read", "records:write"])).resolves.toMatch(/./);
+  });
+
+  // The scopes CHECK deliberately tolerates {} rather than requiring
+  // cardinality >= 1, and this is the test that says why.
+  //
+  // A CHECK fires on UPDATE as well as INSERT, against the NEW row, whether or not
+  // the UPDATE touched the constrained column. So `cardinality(scopes) >= 1` would
+  // make a {}-scoped row impossible to UPDATE — including the one UPDATE that
+  // matters, `set revoked_at = now()`. The constraint meaning "a token must grant
+  // something" would instead mean "a token that grants nothing is permanent".
+  //
+  // {}-scoped rows are not hypothetical: the original constraint said
+  // `array_length(scopes, 1) >= 1`, which is NULL for '{}', and a CHECK only
+  // rejects on FALSE — so it passed everything it was written to reject. Any such
+  // row in production gets stripped to {} by 20260716010000 and must stay revokable.
+  it("can revoke a token that grants nothing", async () => {
+    const { data: row } = await admin()
+      .from("api_tokens")
+      .insert({
+        base_id: baseId,
+        user_id: alice.id,
+        name: "legacy-empty",
+        token_hash: `empty-${randomUUID()}`,
+        prefix: "swamp_pat_legacy",
+        scopes: [],
+      })
+      .select("id")
+      .single();
+
+    expect(row).not.toBeNull();
+
+    const { error } = await admin()
+      .from("api_tokens")
+      .update({ revoked_at: new Date().toISOString() })
+      .eq("id", row!.id);
+
+    expect(error).toBeNull();
   });
 });

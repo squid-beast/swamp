@@ -254,3 +254,75 @@ describe("swamp_move_record", () => {
     expect(new Set(orders).size).toBe(orders.length);
   });
 });
+
+// ─── The count must describe the rows ───────────────────────────────────────
+
+describe("swamp_count_records honours search", () => {
+  // swamp_count_records applied `filter` and never `search`, so the moment anyone
+  // typed in the search box the grid showed the matching rows under a total counted
+  // over the whole table — "3 rows" above a list of one.
+  //
+  // The assertion that matters is not "the count is 1". It is that the count AGREES
+  // WITH THE ROWS: two functions, one definition of what search means. Asserting a
+  // literal would pass just as happily if both drifted together.
+  let tableId: string;
+
+  beforeAll(async () => {
+    const t = must(
+      await alice.db.from("tables").insert({ base_id: baseId, name: "Counted" }).select().single()
+    ) as { id: string };
+    tableId = t.id;
+
+    must(
+      await alice.db.from("fields").insert({
+        table_id: tableId, base_id: baseId, name: "Name", key: "fld_name",
+        type: "text", is_primary: true, sort_order: 1,
+      }).select()
+    );
+
+    must(
+      await alice.db.from("records").insert(
+        ["alpha", "beta", "gamma"].map((n) => ({
+          table_id: tableId, base_id: baseId, data: { fld_name: n },
+        }))
+      ).select()
+    );
+  });
+
+  const rowsAndCount = async (spec: object) => {
+    const [{ data: page }, { data: total }] = await Promise.all([
+      alice.db.rpc("swamp_query_records", { p_table_id: tableId, p_spec: spec }),
+      alice.db.rpc("swamp_count_records", { p_table_id: tableId, p_spec: spec }),
+    ]);
+    return {
+      rows: ((page as { records: unknown[] }).records ?? []).length,
+      count: Number(total),
+    };
+  };
+
+  it("agrees with the rows when searching", async () => {
+    const { rows, count } = await rowsAndCount({ search: "alpha" });
+    expect(rows).toBe(1);
+    expect(count).toBe(rows);
+  });
+
+  it("agrees when the search matches nothing", async () => {
+    const { rows, count } = await rowsAndCount({ search: "nothing-matches-this" });
+    expect(rows).toBe(0);
+    expect(count).toBe(0);
+  });
+
+  it("agrees when search and filter combine", async () => {
+    const { rows, count } = await rowsAndCount({
+      search: "a",
+      filter: { field: "fld_name", op: "neq", value: "gamma" },
+    });
+    expect(count).toBe(rows);
+  });
+
+  it("still counts everything with no search", async () => {
+    const { rows, count } = await rowsAndCount({});
+    expect(count).toBe(3);
+    expect(count).toBe(rows);
+  });
+});

@@ -403,3 +403,80 @@ describe("revoking a link", () => {
     expect(after.error).not.toBeNull();
   });
 });
+
+// ─── The `user` field must not be reachable from a public form ──────────────
+
+describe("user fields on a public form", () => {
+  // swamp_submit_form builds its allow-list by EXCLUSION, so any field type not
+  // named in that NOT IN list is writable by a stranger. `user` stores a uuid and
+  // means "a person here is responsible" — an anonymous submitter must not get to
+  // set one. They cannot even pick sensibly: the roster is private
+  // (swamp_visible_profiles is granted to `authenticated` only), so the value would
+  // be an unvalidated uuid from an untrusted source, landing in a column about
+  // people.
+  //
+  // The filter in form-runtime.tsx drops it from the rendered form. That is a
+  // courtesy, not a boundary — this is the boundary.
+  let userFieldId: string;
+
+  beforeAll(async () => {
+    const f = must(
+      await alice.db
+        .from("fields")
+        .insert({
+          table_id: tableId,
+          base_id: baseId,
+          name: "Owner",
+          key: "fld_owner",
+          type: "user",
+          sort_order: 9,
+        })
+        .select()
+        .single()
+    ) as { id: string };
+    userFieldId = f.id;
+
+    // Show it on the form. The point is that the server refuses it EVEN THEN —
+    // "it isn't displayed" must not be what's protecting us.
+    must(
+      await alice.db.from("view_fields").insert({
+        view_id: formViewId,
+        field_id: userFieldId,
+        base_id: baseId,
+        show: true,
+        sort_order: 9,
+      })
+    );
+  });
+
+  it("drops a user value posted by an anonymous submitter", async () => {
+    const id = must(
+      await anon.rpc("swamp_submit_form", {
+        p_share_id: formShare,
+        p_password: null,
+        p_values: { fld_name: "Walk-in", fld_owner: alice.id },
+      })
+    ) as unknown as string;
+
+    const { data } = await alice.db.from("records").select("data").eq("id", id).single();
+
+    // The name they were asked for landed; the owner they were not asked for did not.
+    expect((data!.data as Record<string, unknown>).fld_name).toBe("Walk-in");
+    expect((data!.data as Record<string, unknown>).fld_owner).toBeUndefined();
+  });
+
+  it("an editor CAN still set it through the app", async () => {
+    // The field is not read-only — it is only unreachable from the anonymous path.
+    // Without this, "the server drops it" would be indistinguishable from "the
+    // field doesn't work".
+    const rec = must(
+      await alice.db
+        .from("records")
+        .insert({ table_id: tableId, base_id: baseId, data: { fld_owner: alice.id } })
+        .select()
+        .single()
+    ) as { data: Record<string, unknown> };
+
+    expect(rec.data.fld_owner).toBe(alice.id);
+  });
+});

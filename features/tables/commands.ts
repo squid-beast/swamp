@@ -48,7 +48,9 @@ type Values = globalThis.Record<string, unknown>;
  * are pure and testable — you can drive the whole stack with a fake.
  */
 export interface CommandContext {
-  patch(patches: { id: string; values: Values }[]): Promise<void>;
+  /** Write. Returns what the write RECOMPUTED — computed keys only, never scalars.
+   *  Empty when the table has no computed fields, which is most tables. */
+  patch(patches: { id: string; values: Values }[]): Promise<{ id: string; values: Values }[]>;
   insert(rows: Values[]): Promise<Record_[]>;
   remove(ids: string[]): Promise<void>;
   restore(ids: string[]): Promise<void>;
@@ -74,13 +76,35 @@ export function editCells(
     label,
     async do() {
       ctx.applyLocal((records) => applyPatches(records, edits));
-      await ctx.patch(edits);
+      applyComputed(ctx, await ctx.patch(edits));
     },
     async undo() {
       ctx.applyLocal((records) => applyPatches(records, before));
-      await ctx.patch(before);
+      // Undo recomputes too. Put a formula's input back and the formula must go
+      // back with it — otherwise undo leaves the row in a state it was never in.
+      applyComputed(ctx, await ctx.patch(before));
     },
   };
+}
+
+/**
+ * Merge what the write recomputed.
+ *
+ * Only ever COMPUTED keys reach here — swamp_computed_values returns nothing else
+ * — and that is what makes this safe to apply late. Two things would break if the
+ * server echoed scalars back:
+ *
+ *   • Undo. The stack re-applies captured `before` scalars; a slow response from
+ *     the previous write could land afterwards and put the new value back.
+ *   • Typing. A response arriving mid-keystroke would overwrite what the user is
+ *     in the middle of writing with what the server had a moment ago.
+ *
+ * A computed key has neither problem: the user cannot type one, and the last write
+ * to land is by definition the most recent truth about it.
+ */
+function applyComputed(ctx: CommandContext, computed: { id: string; values: Values }[]) {
+  if (!computed.length) return;
+  ctx.applyLocal((records) => applyPatches(records, computed));
 }
 
 function applyPatches(records: Record_[], patches: { id: string; values: Values }[]): Record_[] {
@@ -215,38 +239,81 @@ export class CommandStack {
   }
 
   /**
+   * The tail of the operation queue. Every run/undo/redo waits for it.
+   *
+   * ── Why this exists ──
+   *
+   * Because "type something, immediately press Cmd+Z" used to answer "Nothing to
+   * undo" and keep the edit.
+   *
+   * Each command applies its change LOCALLY first and only then awaits the server,
+   * so the new value is on screen roughly instantly — while `run()` is still
+   * suspended at `await command.do()` and has not yet pushed anything. For the
+   * width of one round-trip the screen showed an edit that the undo stack did not
+   * know about, and undo is exactly the reflex people reach for in that window.
+   *
+   * Pushing the command BEFORE awaiting would close that gap and open a worse one:
+   * undo would then fire its reverting write while the original write was still in
+   * flight, and which of the two landed last would decide the row. Ordering these
+   * operations is the point of a command stack, so they queue rather than race.
+   *
+   * ponytail: one queue for the whole grid, so an undo waits behind an unrelated
+   * in-flight edit. Per-record queues if that ever feels slow — it won't, because
+   * these are one round-trip each and a human issues them one at a time.
+   */
+  private tail: Promise<unknown> = Promise.resolve();
+
+  /** Run `fn` after everything already queued, whether or not that failed. */
+  private queue<T>(fn: () => Promise<T>): Promise<T> {
+    const next = this.tail.then(fn, fn);
+    // The queue must survive a failed command: park the rejection here so the next
+    // operation still runs, and let the real caller see it via `next`.
+    this.tail = next.then(
+      () => undefined,
+      () => undefined
+    );
+    return next;
+  }
+
+  /**
    * Run a command and push it.
    *
    * If do() throws, the command does NOT go on the stack — an undo entry for
    * something that never happened is worse than no undo entry at all.
    */
-  async run(command: Command): Promise<void> {
-    await command.do();
+  run(command: Command): Promise<void> {
+    return this.queue(async () => {
+      await command.do();
 
-    this.undoStack.push(command);
-    if (this.undoStack.length > this.limit) this.undoStack.shift();
+      this.undoStack.push(command);
+      if (this.undoStack.length > this.limit) this.undoStack.shift();
 
-    // A new action invalidates the redo future. Every editor does this: you can't
-    // undo, type something else, then redo into a world that no longer exists.
-    this.redoStack = [];
+      // A new action invalidates the redo future. Every editor does this: you can't
+      // undo, type something else, then redo into a world that no longer exists.
+      this.redoStack = [];
+    });
   }
 
-  async undo(): Promise<string | null> {
-    const command = this.undoStack.pop();
-    if (!command) return null;
+  undo(): Promise<string | null> {
+    return this.queue(async () => {
+      const command = this.undoStack.pop();
+      if (!command) return null;
 
-    await command.undo();
-    this.redoStack.push(command);
-    return command.label;
+      await command.undo();
+      this.redoStack.push(command);
+      return command.label;
+    });
   }
 
-  async redo(): Promise<string | null> {
-    const command = this.redoStack.pop();
-    if (!command) return null;
+  redo(): Promise<string | null> {
+    return this.queue(async () => {
+      const command = this.redoStack.pop();
+      if (!command) return null;
 
-    await command.do();
-    this.undoStack.push(command);
-    return command.label;
+      await command.do();
+      this.undoStack.push(command);
+      return command.label;
+    });
   }
 
   clear(): void {

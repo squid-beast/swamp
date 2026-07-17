@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { createUser, deleteUser, must, workspaceOf, type TestUser } from "./harness";
+import { anon, createUser, deleteUser, must, workspaceOf, type TestUser } from "./harness";
 
 // ════════════════════════════════════════════════════════════════════════════
 // View config: filters, sorts, per-view field visibility.
@@ -272,5 +272,111 @@ describe("view fields", () => {
     const byView = new Map(data!.map((r) => [r.view_id, r.show]));
     expect(byView.get(viewId)).toBe(true);
     expect(byView.get(other.id)).toBe(false);
+  });
+});
+
+// ─── Group-by: the group list ───────────────────────────────────────────────
+
+describe("swamp_group_counts", () => {
+  // The engine half of group-by. It answers only "what are the distinct values of
+  // this field, under this filter and search, and how many records has each" — the
+  // group HEADERS. Rows for an expanded group are the existing query with an
+  // ordinary `eq` filter on the group value, which is why the keyset cursor needs
+  // no changes and a COLLAPSED group can cost nothing.
+  let tableId: string;
+
+  beforeAll(async () => {
+    const t = must(
+      await alice.db.from("tables").insert({ base_id: baseId, name: "Grouped" }).select().single()
+    ) as { id: string };
+    tableId = t.id;
+
+    must(
+      await alice.db.from("fields").insert([
+        { table_id: tableId, base_id: baseId, name: "Name", key: "fld_name", type: "text", is_primary: true, sort_order: 1 },
+        { table_id: tableId, base_id: baseId, name: "Status", key: "fld_status", type: "singleSelect", is_primary: false, sort_order: 2 },
+        { table_id: tableId, base_id: baseId, name: "Tags", key: "fld_tags", type: "multiSelect", is_primary: false, sort_order: 3 },
+      ]).select()
+    );
+
+    must(
+      await alice.db.from("records").insert([
+        { table_id: tableId, base_id: baseId, data: { fld_name: "alpha", fld_status: "open" } },
+        { table_id: tableId, base_id: baseId, data: { fld_name: "beta", fld_status: "open" } },
+        { table_id: tableId, base_id: baseId, data: { fld_name: "gamma", fld_status: "closed" } },
+        { table_id: tableId, base_id: baseId, data: { fld_name: "delta" } },
+      ]).select()
+    );
+  });
+
+  const groups = async (spec: object = {}, field = "fld_status", dir = "asc") => {
+    const { data, error } = await alice.db.rpc("swamp_group_counts", {
+      p_table_id: tableId, p_spec: spec, p_field: field, p_dir: dir,
+    });
+    if (error) throw new Error(error.message);
+    return data as { value: unknown; count: number }[];
+  };
+
+  it("counts each distinct value, with the empty group last", async () => {
+    // Nulls last, not first: a record with no status is the least interesting
+    // bucket and belongs at the bottom, the same place a null sorts in the grid.
+    expect(await groups()).toEqual([
+      { value: "closed", count: 1 },
+      { value: "open", count: 2 },
+      { value: null, count: 1 },
+    ]);
+  });
+
+  it("descends when asked", async () => {
+    const g = await groups({}, "fld_status", "desc");
+    expect(g.map((x) => x.value)).toEqual(["open", "closed", null]);
+  });
+
+  it("counts the FILTERED set, not the table", async () => {
+    // A group list that ignored the view's filter would sum to more than the total
+    // and read as a bug.
+    const g = await groups({ filter: { field: "fld_name", op: "neq", value: "beta" } });
+    expect(g).toEqual([
+      { value: "closed", count: 1 },
+      { value: "open", count: 1 },
+      { value: null, count: 1 },
+    ]);
+  });
+
+  it("counts the SEARCHED set", async () => {
+    expect(await groups({ search: "alpha" })).toEqual([{ value: "open", count: 1 }]);
+  });
+
+  it("sums to the same total the grid shows", async () => {
+    // The property that matters: headers and total come from different functions
+    // and must agree. They only do because both honour filter AND search.
+    const spec = { search: "a" };
+    const g = await groups(spec);
+    const { data: total } = await alice.db.rpc("swamp_count_records", {
+      p_table_id: tableId, p_spec: spec,
+    });
+    expect(g.reduce((n, x) => n + Number(x.count), 0)).toBe(Number(total));
+  });
+
+  it("refuses a field that isn't in the catalog", async () => {
+    // The injection boundary. A field name the client invents never reaches the SQL
+    // — only the catalog's own expression does.
+    await expect(groups({}, "fld_nope; drop table records;--")).rejects.toThrow(/unknown field/);
+  });
+
+  it("refuses to group by a multiSelect", async () => {
+    // A group is only useful if you can ask for its rows, and that ask is an `eq`
+    // filter. multiSelect holds a jsonb array — `eq` on it is not a membership
+    // test, and its expr coalesces to '[]' rather than NULL, so "no tags" would
+    // bucket under the string "[]" instead of the empty group. Two meanings of
+    // "in that group" is one too many.
+    await expect(groups({}, "fld_tags")).rejects.toThrow(/cannot group by/);
+  });
+
+  it("is not reachable by anon", async () => {
+    const { error } = await anon().rpc("swamp_group_counts", {
+      p_table_id: tableId, p_spec: {}, p_field: "fld_status",
+    });
+    expect(error).not.toBeNull();
   });
 });

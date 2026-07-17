@@ -48,6 +48,41 @@ export const COMPUTED_FIELD_TYPES = [
   "count",
 ] as const;
 
+/** The barcode symbologies jsbarcode can draw — the same eleven NocoDB offers
+ *  (nocodb-sdk columnHelper/utils/common.ts). CODE128 is the default because it
+ *  encodes arbitrary text; the rest have real constraints (EAN13 wants 13 digits)
+ *  and jsbarcode refuses a value that doesn't fit, which the cell reports. */
+export const BARCODE_FORMATS = [
+  "CODE128",
+  "CODE39",
+  "EAN13",
+  "EAN8",
+  "EAN5",
+  "EAN2",
+  "UPC",
+  "ITF14",
+  "MSI",
+  "pharmacode",
+  "codabar",
+] as const;
+
+/** What a barcode/QR may point at. Scalars only: swamp_field_catalog resolves the
+ *  pointer in PASS 1, and formulas are not computed until passes 2-6, so a barcode
+ *  pointing at a formula would read an expression that does not exist yet. NocoDB
+ *  allows Formula here; we don't, and the catalog enforces the same list. */
+export const BARCODE_SOURCE_TYPES = [
+  "text",
+  "longText",
+  "number",
+  "phone",
+  "email",
+  "url",
+  "uuid",
+  "year",
+  "currency",
+  "percent",
+] as const;
+
 /** Auto-maintained by the database. Never accept a write. */
 export const AUTO_FIELD_TYPES = [
   "createdTime",
@@ -153,6 +188,24 @@ export interface FieldOptions {
   currency?: string; // currency
   precision?: number; // currency | number | percent
   max?: number; // rating
+
+  /** user — hold several people rather than one. Matches NocoDB's `meta.is_multi`,
+   *  which also defaults to single. Off means the cell stores a bare uuid; on means
+   *  an array of them. */
+  allowMultiple?: boolean;
+
+  // barcode | qr
+  //
+  // These hold no value: they POINT at another field and draw its value. Same shape
+  // as NocoDB's fk_barcode_value_column_id / fk_qr_value_column_id. The pointer is
+  // resolved in SQL by swamp_field_catalog, so the cell just receives the source's
+  // value like any other.
+  //
+  // Sources are restricted to scalars — the catalog resolves this in pass 1, before
+  // formulas exist. See 20260716040000_barcode_qr.sql.
+  sourceFieldId?: string;
+  /** barcode only. One of BARCODE_FORMATS; CODE128 if unset. */
+  barcodeFormat?: string;
 
   // link
   targetTableId?: string;
@@ -300,13 +353,19 @@ export interface Attachment {
   url?: string;
 }
 
-export const TOKEN_SCOPES = [
-  "records:read",
-  "records:write",
-  "schema:read",
-  "webhooks:read",
-  "webhooks:write",
-] as const;
+/** The scopes that are actually enforced.
+ *
+ *  There were five. `schema:read`, `webhooks:read` and `webhooks:write` were read by
+ *  NOTHING — every `swamp_api_require` call in platform.sql asks for `records:read`
+ *  or `records:write` and there are no other call sites. A `schema:read`-only token
+ *  could not even call /api/v1/meta (which requires records:read), so it could do
+ *  nothing at all, and there are no v1 webhook endpoints for the webhook scopes to
+ *  govern. They were removed rather than enforced: gating /meta behind schema:read
+ *  would break every token minted with the default '{records:read}', which is the
+ *  modal token. See 20260716010000_token_scopes.sql.
+ *
+ *  Add one back only in the same commit as the endpoint that honours it. */
+export const TOKEN_SCOPES = ["records:read", "records:write"] as const;
 
 export type TokenScope = (typeof TOKEN_SCOPES)[number];
 

@@ -12,6 +12,36 @@ function db() {
   return createClient();
 }
 
+/**
+ * Resolve user ids to display names.
+ *
+ * Goes through `swamp_visible_profiles` rather than reading `profiles` directly,
+ * because you cannot read `profiles` directly — "profiles: read own"
+ * (20260706000000_init.sql:19) is `using (auth.uid() = id)` and returns exactly
+ * one row: yours. Every call site here used to select from the table and get back
+ * only itself, which is why comment authors and history actors all rendered as
+ * "Someone" and why the members panel listed a team of one.
+ *
+ * The function is SECURITY DEFINER and returns a narrow projection — no `dob`. See
+ * 20260716020000_visible_profiles.sql.
+ *
+ * Unknown ids simply do not come back, and callers fall back to "Someone": a
+ * comment whose author has since been deleted still has to render.
+ */
+async function namesFor(ids: (string | null)[]): Promise<Map<string, string>> {
+  const unique = [...new Set(ids.filter((id): id is string => !!id))];
+  if (!unique.length) return new Map();
+
+  const { data } = await db().rpc("swamp_visible_profiles", { p_user_ids: unique });
+
+  return new Map(
+    ((data as Row[]) ?? []).map((p) => [
+      p.id as string,
+      [p.first_name, p.last_name].filter(Boolean).join(" ") || "Someone",
+    ])
+  );
+}
+
 // ─── Comments ───────────────────────────────────────────────────────────────
 
 export interface Comment {
@@ -56,18 +86,7 @@ export async function listComments(recordId: string): Promise<Comment[]> {
 
   // Names come from `profiles`, and a comment whose author has been deleted still
   // has to render — hence the fallback rather than a join that would drop the row.
-  const authorIds = [...new Set(data.map((c) => c.author_id as string))];
-  const { data: profiles } = await db()
-    .from("profiles")
-    .select("id, first_name, last_name")
-    .in("id", authorIds);
-
-  const names = new Map(
-    (profiles ?? []).map((p) => [
-      p.id as string,
-      [p.first_name, p.last_name].filter(Boolean).join(" ") || "Someone",
-    ])
-  );
+  const names = await namesFor(data.map((c) => c.author_id as string));
 
   return data.map((c: Row) => ({
     id: c.id as string,
@@ -152,18 +171,7 @@ export async function listHistory(recordId: string, limit = 50): Promise<AuditEn
   if (error) throw new Error(`listHistory: ${error.message}`);
   if (!data?.length) return [];
 
-  const actorIds = [...new Set(data.map((e) => e.actor_id).filter(Boolean))] as string[];
-  const { data: profiles } = await db()
-    .from("profiles")
-    .select("id, first_name, last_name")
-    .in("id", actorIds.length ? actorIds : ["00000000-0000-0000-0000-000000000000"]);
-
-  const names = new Map(
-    (profiles ?? []).map((p) => [
-      p.id as string,
-      [p.first_name, p.last_name].filter(Boolean).join(" ") || "Someone",
-    ])
-  );
+  const names = await namesFor(data.map((e) => e.actor_id as string | null));
 
   return data.map((e: Row) => ({
     id: e.id as string,
@@ -222,17 +230,31 @@ export async function listMembers(baseId: string): Promise<Member[]> {
   const ids = [...byUser.keys()];
   if (!ids.length) return [];
 
-  const { data: profiles } = await db()
-    .from("profiles")
-    .select("id, first_name, last_name, email")
-    .in("id", ids);
+  const { data: profiles } = await db().rpc("swamp_visible_profiles", {
+    p_user_ids: ids,
+  });
 
-  return (profiles ?? []).map((p) => {
-    const entry = byUser.get(p.id as string)!;
+  const byId = new Map(((profiles as Row[]) ?? []).map((p) => [p.id as string, p]));
+
+  // Iterate the MEMBERSHIP, not the profiles.
+  //
+  // This used to map over the profiles result, which meant a member whose profile
+  // did not come back was not shown nameless — they were dropped from the list
+  // entirely. Combined with the read-own-only policy on `profiles`, the panel whose
+  // whole job is showing you the team showed you exactly one person: yourself.
+  //
+  // Membership is the truth here; a name is decoration on top of it. If a profile
+  // is missing (a deleted user, say), say so and still show the row — a role you
+  // cannot see is a role you cannot revoke.
+  return ids.map((id) => {
+    const entry = byUser.get(id)!;
+    const p = byId.get(id);
     return {
-      userId: p.id as string,
-      name: [p.first_name, p.last_name].filter(Boolean).join(" ") || "Someone",
-      email: (p.email as string) ?? "",
+      userId: id,
+      name: p
+        ? [p.first_name, p.last_name].filter(Boolean).join(" ") || "Someone"
+        : "Someone",
+      email: (p?.email as string) ?? "",
       role: entry.role,
       inherited: entry.inherited,
     };

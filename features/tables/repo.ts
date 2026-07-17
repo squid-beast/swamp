@@ -48,8 +48,21 @@ function db() {
   return createClient();
 }
 
-function fail(context: string, error: { message: string } | null): never {
-  throw new Error(`${context}: ${error?.message ?? "unknown error"}`);
+/** Throw, keeping Postgres's SQLSTATE on the way up.
+ *
+ *  The code is the difference between "you may not" and "it broke". RLS denials and
+ *  the guard triggers raise 42501; without the code every one of them reads as an
+ *  unknown failure at the route, and `apiError` (features/tables/rest.ts) — which
+ *  already maps 42501 → 403 — has nothing to work with. */
+export function fail(
+  context: string,
+  error: { message: string; code?: string } | null
+): never {
+  const e = new Error(`${context}: ${error?.message ?? "unknown error"}`) as Error & {
+    code?: string;
+  };
+  if (error?.code) e.code = error.code;
+  throw e;
 }
 
 // ─── Mapping ────────────────────────────────────────────────────────────────
@@ -124,6 +137,37 @@ export async function createBase(workspaceId: string, name: string): Promise<Bas
     .single();
   if (error) fail("createBase", error);
   return toBase(data);
+}
+
+export async function updateBase(
+  baseId: string,
+  patch: { name?: string; icon?: string | null; color?: string | null }
+): Promise<void> {
+  const row: Record<string, unknown> = {};
+  if (patch.name !== undefined) row.name = patch.name;
+  if (patch.icon !== undefined) row.icon = patch.icon;
+  if (patch.color !== undefined) row.color = patch.color;
+  if (!Object.keys(row).length) return;
+
+  const { error } = await db().from("bases").update(row).eq("id", baseId);
+  if (error) fail("updateBase", error);
+}
+
+/** Soft delete, like every other object here — the row is tombstoned, not removed.
+ *  A hard delete would cascade through tables → fields → records (see the
+ *  `on delete cascade` on tables.base_id) and take the whole base with it, with
+ *  nothing to restore from.
+ *
+ *  Owner-only, but note the check is NOT here: RLS lets a *creator* update a base,
+ *  so an app-side check would be a suggestion, not a boundary. The rule lives in the
+ *  `bases_guard_soft_delete` trigger (20260716000000_object_management.sql), which
+ *  every caller has to go through. A non-owner gets 42501 back from Postgres. */
+export async function deleteBase(baseId: string): Promise<void> {
+  const { error } = await db()
+    .from("bases")
+    .update({ deleted_at: new Date().toISOString() })
+    .eq("id", baseId);
+  if (error) fail("deleteBase", error);
 }
 
 // ─── Tables ─────────────────────────────────────────────────────────────────
@@ -210,6 +254,29 @@ export async function queryRecords(
     ),
     next: result.next ?? null,
   };
+}
+
+/**
+ * The group headers: distinct values of a field, with counts, over the FILTERED and
+ * SEARCHED set.
+ *
+ * Counting the loaded window instead would report "3" for a group of 3,000 — the
+ * same class of lie as summing a column over the current page.
+ */
+export async function groupCounts(
+  tableId: string,
+  spec: QuerySpec,
+  fieldKey: string,
+  dir: "asc" | "desc" = "asc"
+): Promise<{ value: unknown; count: number }[]> {
+  const { data, error } = await db().rpc("swamp_group_counts", {
+    p_table_id: tableId,
+    p_spec: spec,
+    p_field: fieldKey,
+    p_dir: dir,
+  });
+  if (error) fail("groupCounts", error);
+  return (data as { value: unknown; count: number }[]) ?? [];
 }
 
 export async function countRecords(tableId: string, spec: QuerySpec = {}): Promise<number> {
@@ -352,7 +419,7 @@ export async function insertRecords(
 export async function updateRecords(
   tableId: string,
   patches: { id: string; values: Row }[]
-): Promise<{ errors: WriteError[] }> {
+): Promise<{ errors: WriteError[]; computed: { id: string; values: Row }[] }> {
   const fields = await listFields(tableId);
 
   const cleaned: { id: string; values: Row }[] = [];
@@ -362,7 +429,7 @@ export async function updateRecords(
     errors.push(...r.errors);
     cleaned.push({ id: p.id, values: r.clean });
   });
-  if (errors.length) return { errors };
+  if (errors.length) return { errors, computed: [] };
 
   const { error } = await db().rpc("swamp_patch_records", {
     p_table_id: tableId,
@@ -370,7 +437,35 @@ export async function updateRecords(
   });
   if (error) fail("updateRecords", error);
 
-  return { errors: [] };
+  return { errors: [], computed: await computedValues(tableId, cleaned.map((p) => p.id)) };
+}
+
+/**
+ * What a write recomputed: the computed fields of these records, as they are NOW.
+ *
+ * A formula's value lives nowhere on disk — it is produced by the projection in
+ * swamp_query_records at read time — so after a write the only way to know it is to
+ * ask. This is that ask, scoped to the rows the write touched.
+ *
+ * It returns COMPUTED KEYS ONLY, and deliberately: echoing scalars back would race
+ * the undo stack and the user's own typing. See 20260716050000_computed_after_write.sql.
+ *
+ * A table with no computed fields gets `[]` without the function touching the heap,
+ * so the ordinary grid pays one cheap catalog read for a feature it doesn't use.
+ */
+export async function computedValues(
+  tableId: string,
+  ids: string[]
+): Promise<{ id: string; values: Row }[]> {
+  if (!ids.length) return [];
+
+  const { data, error } = await db().rpc("swamp_computed_values", {
+    p_table_id: tableId,
+    p_ids: ids,
+  });
+  if (error) fail("computedValues", error);
+
+  return (data as { id: string; values: Row }[]) ?? [];
 }
 
 /** Soft delete. The read path excludes these automatically. */

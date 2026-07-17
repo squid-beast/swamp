@@ -55,9 +55,18 @@ export function FormRuntime({
   };
 
   // Computed fields have nothing to fill in.
+  //
+  // `user` is excluded for a different reason: this form is filled by a stranger.
+  // The picker needs the base's roster, and the roster is deliberately not public
+  // (/api/bases/[id]/members requires auth), so the control could only ever render
+  // empty — and whatever a stranger typed would be an unvalidated uuid landing in a
+  // column that means "a person here is responsible". The server drops it too; see
+  // swamp_share_submit. NocoDB does show User on a form, and this is a considered
+  // difference, not an oversight.
   const fields = meta.fields.filter(
     (f) =>
       !["link", "lookup", "rollup", "formula", "count", "button", "barcode", "qr",
+        "user",
         "createdTime", "modifiedTime", "createdBy", "modifiedBy"].includes(f.type)
   );
 

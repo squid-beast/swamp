@@ -114,12 +114,15 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     );
   }
 
-  const { errors } = await updateRecords(params.id, parsed.data.patches);
+  const { errors, computed } = await updateRecords(params.id, parsed.data.patches);
   if (errors.length) {
     return NextResponse.json({ error: "invalid values", errors }, { status: 400 });
   }
 
-  return NextResponse.json({ ok: true });
+  // `computed` is what the write changed that the client could not have known:
+  // formulas, rollups, lookups, counts, modifiedTime/By, barcodes. Computed keys
+  // only — never the scalars the caller just sent, which would race their typing.
+  return NextResponse.json({ ok: true, computed });
 }
 
 /** Soft delete. The read path excludes these without the caller asking. */

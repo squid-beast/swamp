@@ -1,7 +1,7 @@
 import "server-only";
 import { createClient } from "@/shared/supabase/server";
 import { deriveFieldKey } from "./field-key";
-import { listFields } from "./repo";
+import { fail, listFields } from "./repo";
 import type { Field, FieldOptions, FieldType, View, ViewType } from "./types";
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -133,16 +133,6 @@ export async function deleteField(fieldId: string): Promise<void> {
   if (error) throw new Error(`deleteField: ${error.message}`);
 }
 
-export async function reorderFields(order: { id: string; sortOrder: number }[]): Promise<void> {
-  for (const f of order) {
-    const { error } = await db()
-      .from("fields")
-      .update({ sort_order: f.sortOrder })
-      .eq("id", f.id);
-    if (error) throw new Error(`reorderFields: ${error.message}`);
-  }
-}
-
 // ─── Views ──────────────────────────────────────────────────────────────────
 
 const toView = (r: Record<string, unknown>): View => ({
@@ -225,6 +215,17 @@ export async function deleteView(viewId: string): Promise<void> {
 
 // ─── Tables ─────────────────────────────────────────────────────────────────
 
+/** Create a table that actually opens.
+ *
+ *  Three rows, not one — and the field is not optional. A table with no fields is
+ *  not an empty table, it's a broken one: the query engine rejects it outright
+ *  ("table … not found, has no fields, or you cannot read it") and the grid renders
+ *  that error instead of a table. This function had no callers for its whole life,
+ *  so it had never once been run and the missing field had never been noticed.
+ *
+ *  `createField` marks the first field primary and derives its key, so the default
+ *  matches what the blank template builds (templates.ts: `Table 1` / `Name` text).
+ *  View_fields rows are deliberately NOT created: absent config, every field shows. */
 export async function createTable(
   baseId: string,
   name: string
@@ -234,7 +235,9 @@ export async function createTable(
     .insert({ base_id: baseId, name })
     .select("id")
     .single();
-  if (error) throw new Error(`createTable: ${error.message}`);
+  if (error) fail("createTable", error);
+
+  await createField(table.id, baseId, { name: "Name", type: "text" });
 
   const { data: view, error: viewError } = await db()
     .from("views")
@@ -247,7 +250,7 @@ export async function createTable(
     })
     .select("id")
     .single();
-  if (viewError) throw new Error(`createTable view: ${viewError.message}`);
+  if (viewError) fail("createTable view", viewError);
 
   return { tableId: table.id, viewId: view.id };
 }
@@ -255,13 +258,19 @@ export async function createTable(
 export async function updateTable(tableId: string, patch: { name?: string }): Promise<void> {
   if (!patch.name) return;
   const { error } = await db().from("tables").update({ name: patch.name }).eq("id", tableId);
-  if (error) throw new Error(`updateTable: ${error.message}`);
+  if (error) fail("updateTable", error);
 }
 
+/** Soft delete, matching every other object in the model — the row is tombstoned.
+ *  A hard delete would cascade to fields, views and records via
+ *  `on delete cascade`, and there'd be nothing to bring back.
+ *
+ *  Creator-gated, in RLS ("tables: creator write" is `for all`), so there is no
+ *  check here — a call from an editor simply fails with 42501. */
 export async function deleteTable(tableId: string): Promise<void> {
   const { error } = await db()
     .from("tables")
     .update({ deleted_at: new Date().toISOString() })
     .eq("id", tableId);
-  if (error) throw new Error(`deleteTable: ${error.message}`);
+  if (error) fail("deleteTable", error);
 }
