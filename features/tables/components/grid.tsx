@@ -102,7 +102,7 @@ const ROW_HEIGHTS = { short: 36, medium: 56, tall: 88, extra: 128 } as const;
 export type RowHeight = keyof typeof ROW_HEIGHTS;
 
 const GROUP_HEADER_PX = 32;
-const GUTTER_WIDTH = 88;
+const GUTTER_WIDTH = 56;
 const DEFAULT_COL_WIDTH = 180;
 const MIN_COL_WIDTH = 80;
 const PREFETCH_ROWS = 20;
@@ -459,8 +459,10 @@ export function Grid(props: GridProps) {
                 }}
                 data-testid="grid-row"
               >
-                {/* Gutter */}
-                <div className="group/gutter flex items-center gap-0.5 border-r px-1.5 text-[12px] tabular-nums text-muted-foreground">
+                {/* Gutter: drag handle + row number / checkbox. Expand moved into
+                    the first cell so three controls no longer share one narrow
+                    column. */}
+                <div className="group/gutter flex items-center gap-1 border-r px-1.5 text-[12px] tabular-nums text-muted-foreground">
                   <span
                     draggable
                     onDragStart={() => setDragRow(rowIndex)}
@@ -476,7 +478,7 @@ export function Grid(props: GridProps) {
 
                   <span
                     className={cn(
-                      "w-5 text-right group-hover/gutter:hidden",
+                      "ml-auto w-5 text-right group-hover/gutter:hidden",
                       isSelected && "hidden"
                     )}
                   >
@@ -484,7 +486,7 @@ export function Grid(props: GridProps) {
                   </span>
                   <span
                     className={cn(
-                      "hidden w-5 justify-end group-hover/gutter:flex",
+                      "ml-auto hidden w-5 justify-end group-hover/gutter:flex",
                       isSelected && "flex"
                     )}
                   >
@@ -494,15 +496,6 @@ export function Grid(props: GridProps) {
                       aria-label={`Select row ${rowIndex + 1}`}
                     />
                   </span>
-
-                  <button
-                    onClick={() => onExpand(record.id)}
-                    className="ml-auto opacity-0 group-hover/gutter:opacity-100"
-                    aria-label={`Expand row ${rowIndex + 1}`}
-                    data-testid="expand-row"
-                  >
-                    <Maximize2 className="size-3" />
-                  </button>
                 </div>
 
                 {/* Cells */}
@@ -579,6 +572,24 @@ export function Grid(props: GridProps) {
                             tableId={tableId}
                             onLinksChanged={onLinksChanged}
                           />
+
+                          {/* Expand lives on the primary column, revealed on row
+                              hover — the Airtable placement. It stops propagation so
+                              the click opens the record instead of selecting the cell. */}
+                          {col === 0 && (
+                            <button
+                              onMouseDown={(e) => e.stopPropagation()}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onExpand(record.id);
+                              }}
+                              className="absolute right-1.5 top-1/2 z-20 flex size-5 -translate-y-1/2 items-center justify-center rounded border bg-background text-muted-foreground opacity-0 shadow-sm hover:text-foreground group-hover:opacity-100"
+                              aria-label={`Expand row ${rowIndex + 1}`}
+                              data-testid="expand-row"
+                            >
+                              <Maximize2 className="size-3" />
+                            </button>
+                          )}
 
                           {showHandle && (
                             <span
