@@ -125,7 +125,7 @@ export function FilterBuilder({
   };
 
   return (
-    <div className="w-[min(38rem,90vw)] p-3">
+    <div className="w-[min(44rem,92vw)] p-3">
       <GroupEditor
         fields={fields}
         node={root}
@@ -345,7 +345,10 @@ function LeafEditor({
   const selectOptions = field.options.options ?? [];
 
   return (
-    <div className="flex items-center gap-1.5">
+    // flex-wrap: a temporal filter (field + operator + sub-op + N + value + remove)
+    // is wider than the popover, so the controls flow to a second line instead of
+    // overflowing and clipping.
+    <div className="flex flex-wrap items-center gap-1.5">
       <Select value={field.key} onValueChange={changeField}>
         <SelectTrigger className="h-8 w-[9rem] shrink-0 text-[13px]">
           <SelectValue />

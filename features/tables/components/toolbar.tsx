@@ -461,7 +461,9 @@ export function Toolbar(props: ToolbarProps) {
         Export
       </Button>
 
-      <div className="relative ml-auto w-56">
+      {/* Full width (its own row) when the toolbar is cramped; pinned right at 14rem
+          once there's room, so it never crowds the button cluster. */}
+      <div className="relative ml-auto w-full sm:w-56">
         <Search className="absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
         <Input
           value={search}
