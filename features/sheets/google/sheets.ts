@@ -5,6 +5,30 @@ const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 
 export const isGoogleConfigured = !!GOOGLE_CLIENT_ID && !!GOOGLE_CLIENT_SECRET;
 
+/** The one scope the Sheets connector needs — read a spreadsheet the user picks. */
+export const SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets.readonly";
+
+/** True when a stored credential's granted scope actually includes Sheets read. A
+ *  bare Google sign-in grants none, so this is what separates a Sheets credential
+ *  from a leftover sign-in token. */
+export const hasSheetsScope = (scope: string | null | undefined) =>
+  !!scope && scope.includes("spreadsheets");
+
+/** What a Google access token is actually allowed to do, straight from Google.
+ *  Returns "" if it can't be determined — the caller then treats it as un-scoped. */
+export async function fetchGrantedScope(accessToken: string): Promise<string> {
+  try {
+    const res = await fetch(
+      `https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(accessToken)}`
+    );
+    if (!res.ok) return "";
+    const json = (await res.json()) as { scope?: string };
+    return json.scope ?? "";
+  } catch {
+    return "";
+  }
+}
+
 // Exchange a stored refresh token for a fresh, short-lived access token.
 export async function getAccessToken(refreshToken: string): Promise<string> {
   const res = await fetch("https://oauth2.googleapis.com/token", {

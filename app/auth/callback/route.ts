@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/shared/supabase/server";
+import { SHEETS_SCOPE, fetchGrantedScope, hasSheetsScope } from "@/features/sheets/google/sheets";
 
 // OAuth (Google) + email-confirmation return. Exchanges the code for a session,
 // captures the Google refresh token (for offline Sheets reads) when present,
@@ -29,13 +30,25 @@ export async function GET(request: NextRequest) {
     const refresh = data.session?.provider_refresh_token;
     const userId = data.session?.user?.id;
     if (refresh && userId) {
-      // Best-effort: persist the Google refresh token for the Sheets poller. A
-      // failure here must never block sign-in, so its result is ignored.
-      await supabase.from("google_credentials").upsert({
-        user_id: userId,
-        refresh_token: refresh,
-        updated_at: new Date().toISOString(),
-      });
+      // google_credentials is Sheets-only. A plain Google sign-in grants no Sheets
+      // scope and must NOT write here — doing so used to overwrite a good Sheets
+      // token with a useless one (or create a bogus "connected" row that 403s on the
+      // first Load tabs). Ask Google what the token can actually do; fall back to the
+      // connect flow's requested scope if Google won't say. Store only if it's real.
+      const providerToken = data.session?.provider_token;
+      let scope = providerToken ? await fetchGrantedScope(providerToken) : "";
+      if (!scope && next.startsWith("/app/connect")) scope = SHEETS_SCOPE;
+
+      if (hasSheetsScope(scope)) {
+        // Best-effort: a failure here must never block sign-in, so its result is
+        // ignored.
+        await supabase.from("google_credentials").upsert({
+          user_id: userId,
+          refresh_token: refresh,
+          scope,
+          updated_at: new Date().toISOString(),
+        });
+      }
     }
   }
 
