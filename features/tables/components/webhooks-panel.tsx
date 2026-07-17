@@ -14,6 +14,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/shared/ui/select";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/shared/ui/tooltip";
 import { WEBHOOK_EVENTS, type Table, type Webhook, type WebhookDelivery, type WebhookEvent } from "../types";
 
 // Webhooks.
@@ -24,6 +30,18 @@ import { WEBHOOK_EVENTS, type Table, type Webhook, type WebhookDelivery, type We
 // argument has no end.
 
 const ANY = "__any__";
+
+// Plain-English trigger names; the raw event (record.created) is what rides in the
+// webhook payload, so it stays reachable on hover for whoever writes the receiver.
+const EVENT_LABELS: Record<WebhookEvent, string> = {
+  "record.created": "Record created",
+  "record.updated": "Record updated",
+  "record.deleted": "Record deleted",
+  "comment.created": "Comment added",
+  "button.clicked": "Button clicked",
+};
+
+const eventLabel = (e: string) => EVENT_LABELS[e as WebhookEvent] ?? e;
 
 export function WebhooksPanel({
   baseId,
@@ -111,7 +129,8 @@ export function WebhooksPanel({
   };
 
   return (
-    <main className="mx-auto w-full max-w-3xl p-6">
+    <TooltipProvider delayDuration={150}>
+      <main className="mx-auto w-full max-w-3xl p-6">
       <h1 className="font-display text-2xl font-extrabold tracking-tight">
         {baseName} — automations
       </h1>
@@ -170,7 +189,14 @@ export function WebhooksPanel({
           {WEBHOOK_EVENTS.map((e) => (
             <label key={e} className="flex items-center gap-1.5 text-[13px]">
               <Checkbox checked={events.includes(e)} onCheckedChange={() => toggleEvent(e)} />
-              <code className="font-mono text-[12px]">{e}</code>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span>{EVENT_LABELS[e]}</span>
+                </TooltipTrigger>
+                <TooltipContent>
+                  Event: <span className="font-mono">{e}</span>
+                </TooltipContent>
+              </Tooltip>
             </label>
           ))}
         </div>
@@ -193,7 +219,7 @@ export function WebhooksPanel({
               <div className="flex min-w-0 flex-col">
                 <span className="truncate text-[13px]">{w.name}</span>
                 <span className="truncate text-[11px] text-muted-foreground">
-                  {w.url} · {w.events.join(", ")}
+                  {w.url} · {w.events.map(eventLabel).join(", ")}
                 </span>
               </div>
 
@@ -242,7 +268,7 @@ export function WebhooksPanel({
                   <div key={d.id} className="flex items-center gap-2 py-1 text-[12px]">
                     <span className="w-16 shrink-0 font-mono">{d.status}</span>
                     <span className="w-32 shrink-0 truncate text-muted-foreground">
-                      {d.event}
+                      {eventLabel(d.event)}
                     </span>
                     <span className="w-14 shrink-0 text-muted-foreground">
                       {d.responseStatus ?? "—"}
@@ -260,6 +286,7 @@ export function WebhooksPanel({
           </div>
         ))}
       </section>
-    </main>
+      </main>
+    </TooltipProvider>
   );
 }

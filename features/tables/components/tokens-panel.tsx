@@ -7,6 +7,12 @@ import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 import { Label } from "@/shared/ui/label";
 import { Checkbox } from "@/shared/ui/checkbox";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/shared/ui/tooltip";
 import { TOKEN_SCOPES, type ApiToken, type TokenScope } from "../types";
 
 // API tokens.
@@ -17,10 +23,19 @@ import { TOKEN_SCOPES, type ApiToken, type TokenScope } from "../types";
 // — it is the reason the feature is safe, so the UI says so out loud rather than
 // hiding it behind a "you won't see this again" toast nobody reads.
 
+// Plain-English name shown to people; the raw scope (records:read) is the API
+// string, kept one hover away for the developer who needs the exact value.
+const SCOPE_LABEL: Record<TokenScope, string> = {
+  "records:read": "Read records",
+  "records:write": "Write records",
+};
+
 const SCOPE_HINTS: Record<TokenScope, string> = {
-  "records:read": "Read records.",
+  "records:read": "View records through the API. Can't make changes.",
   "records:write": "Create, update and delete records.",
 };
+
+const scopeLabel = (s: string) => SCOPE_LABEL[s as TokenScope] ?? s;
 
 /** 90 days. A token with no expiry is a credential that outlives the reason it was
  *  made — the integration is switched off, nobody revokes the key, and it sits
@@ -87,7 +102,8 @@ export function TokensPanel({
   };
 
   return (
-    <main className="mx-auto w-full max-w-2xl p-6">
+    <TooltipProvider delayDuration={150}>
+      <main className="mx-auto w-full max-w-2xl p-6">
       <h1 className="font-display text-2xl font-extrabold tracking-tight">
         {baseName} — API
       </h1>
@@ -139,15 +155,25 @@ export function TokensPanel({
           placeholder="What is it for? e.g. Nightly sync"
         />
 
-        <div className="flex flex-col gap-1.5">
+        <div className="flex flex-col gap-2">
           {TOKEN_SCOPES.map((scope) => (
-            <label key={scope} className="flex items-center gap-2 text-[13px]">
+            <label key={scope} className="flex items-start gap-2 text-[13px]">
               <Checkbox
+                className="mt-0.5"
                 checked={scopes.includes(scope)}
                 onCheckedChange={() => toggle(scope)}
               />
-              <code className="font-mono text-[12px]">{scope}</code>
-              <span className="text-muted-foreground">{SCOPE_HINTS[scope]}</span>
+              <span className="flex flex-col">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="w-fit font-medium">{SCOPE_LABEL[scope]}</span>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    API scope: <span className="font-mono">{scope}</span>
+                  </TooltipContent>
+                </Tooltip>
+                <span className="text-muted-foreground">{SCOPE_HINTS[scope]}</span>
+              </span>
             </label>
           ))}
         </div>
@@ -189,8 +215,9 @@ export function TokensPanel({
           >
             <div className="flex min-w-0 flex-col">
               <span className="truncate text-[13px]">{t.name}</span>
-              <span className="truncate font-mono text-[11px] text-muted-foreground">
-                {t.prefix}… · {t.scopes.join(", ")}
+              <span className="truncate text-[11px] text-muted-foreground">
+                <span className="font-mono">{t.prefix}…</span> ·{" "}
+                {t.scopes.map(scopeLabel).join(", ")}
               </span>
             </div>
 
@@ -218,6 +245,7 @@ export function TokensPanel({
           </div>
         ))}
       </section>
-    </main>
+      </main>
+    </TooltipProvider>
   );
 }
