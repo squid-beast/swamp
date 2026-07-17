@@ -65,22 +65,42 @@ export function useRealtime({
     }, 4000);
   }, []);
 
+  // The callbacks are rebuilt on every parent render (they close over applyLocal).
+  // If they were effect deps the subscription would tear down and re-open on every
+  // render — dropping events in the gap and reconnecting the socket constantly. Refs
+  // let the handler read the latest callback while the effect runs exactly once per
+  // table.
+  const cbs = React.useRef({ onUpsert, onDelete, onReload });
+  cbs.current = { onUpsert, onDelete, onReload };
+
   React.useEffect(() => {
     if (!enabled) return;
 
     const supabase = createClient();
+    let cancelled = false;
+    let channel: ReturnType<typeof supabase.channel> | undefined;
 
-    const channel = supabase
-      .channel(`records:${tableId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "records",
-          filter: `table_id=eq.${tableId}`,
-        },
-        (payload) => {
+    // Authenticate the socket BEFORE subscribing. postgres_changes is RLS-gated:
+    // an anonymous socket receives zero events, which is exactly "collaborators'
+    // edits never appear without a refresh". getSession() reads the JWT the client
+    // hydrated from cookies; setAuth hands it to the realtime connection.
+    void (async () => {
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      if (token) supabase.realtime.setAuth(token);
+      if (cancelled) return;
+
+      channel = supabase
+        .channel(`records:${tableId}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "records",
+            filter: `table_id=eq.${tableId}`,
+          },
+          (payload) => {
           const row = (payload.new ?? payload.old) as {
             id: string;
             data: globalThis.Record<string, unknown>;
@@ -102,7 +122,7 @@ export function useRealtime({
           }
 
           if (payload.eventType === "DELETE" || row.deleted_at) {
-            onDelete(row.id);
+            cbs.current.onDelete(row.id);
             return;
           }
 
@@ -110,11 +130,11 @@ export function useRealtime({
           // it depends on the view's sort and filter, which live on the server. So
           // a new row triggers a refetch rather than a guess about where to put it.
           if (payload.eventType === "INSERT") {
-            onReload();
+            cbs.current.onReload();
             return;
           }
 
-          onUpsert({
+          cbs.current.onUpsert({
             id: row.id,
             data: row.data ?? {},
             sortOrder: Number(row.sort_order),
@@ -123,14 +143,24 @@ export function useRealtime({
             createdBy: row.created_by,
             updatedBy: row.updated_by,
           });
-        }
-      )
-      .subscribe();
+          }
+        )
+        .subscribe();
+    })();
+
+    // A token refresh (~hourly) issues a new JWT. Without re-arming the socket the
+    // subscription keeps the old token and silently stops receiving events when it
+    // expires.
+    const { data: auth } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.access_token) supabase.realtime.setAuth(session.access_token);
+    });
 
     return () => {
-      void supabase.removeChannel(channel);
+      cancelled = true;
+      auth.subscription.unsubscribe();
+      if (channel) void supabase.removeChannel(channel);
     };
-  }, [tableId, enabled, onUpsert, onDelete, onReload]);
+  }, [tableId, enabled]);
 
   return { claim };
 }

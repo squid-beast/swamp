@@ -54,7 +54,13 @@ export interface UseGridArgs {
   onRecordsChanged: () => void;
 }
 
-export function useGrid({ fields, records, tableId, applyLocal }: UseGridArgs) {
+export function useGrid({
+  fields,
+  records,
+  tableId,
+  applyLocal,
+  onRecordsChanged,
+}: UseGridArgs) {
   const [active, setActive] = React.useState<CellRef | null>(null);
   const [range, setRange] = React.useState<Range | null>(null);
   const [editing, setEditing] = React.useState(false);
@@ -142,6 +148,11 @@ export function useGrid({ fields, records, tableId, applyLocal }: UseGridArgs) {
     async (command: Parameters<CommandStack["run"]>[0]) => {
       try {
         await stack.run(command);
+        // The write landed. `body.computed` reconciled the edited rows, but a rollup
+        // or formula on a DIFFERENT row can depend on this one — the server knows,
+        // the client can't. onRecordsChanged lets the workspace refetch when (and
+        // only when) the table has computed fields.
+        onRecordsChanged();
       } catch (e) {
         toast.error((e as Error).message);
         // The command applied its local change before the request failed. Undo it
@@ -151,22 +162,26 @@ export function useGrid({ fields, records, tableId, applyLocal }: UseGridArgs) {
       }
       forceRender();
     },
-    [stack]
+    [stack, onRecordsChanged]
   );
 
   const undo = React.useCallback(async () => {
     const label = await stack.undo();
     forceRender();
-    if (label) toast.success(`Undid: ${label}`);
-    else toast("Nothing to undo");
-  }, [stack]);
+    if (label) {
+      onRecordsChanged();
+      toast.success(`Undid: ${label}`);
+    } else toast("Nothing to undo");
+  }, [stack, onRecordsChanged]);
 
   const redo = React.useCallback(async () => {
     const label = await stack.redo();
     forceRender();
-    if (label) toast.success(`Redid: ${label}`);
-    else toast("Nothing to redo");
-  }, [stack]);
+    if (label) {
+      onRecordsChanged();
+      toast.success(`Redid: ${label}`);
+    } else toast("Nothing to redo");
+  }, [stack, onRecordsChanged]);
 
   // ── Editing ──
 

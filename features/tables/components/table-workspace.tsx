@@ -17,7 +17,7 @@ import type {
   View,
   ViewField,
 } from "../types";
-import { canEditViewConfig } from "../types";
+import { canEditViewConfig, COMPUTED_FIELD_TYPES } from "../types";
 import { Grid, groupKeyOf } from "./grid";
 import { Gallery } from "./gallery";
 import { Kanban } from "./kanban";
@@ -221,12 +221,28 @@ export function TableWorkspace({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [countsKey, table.id]);
 
+  // A cell edit can change a rollup/formula/lookup/count on a DIFFERENT row, which
+  // only the server can compute. When the table has such fields, refetch after a
+  // write — debounced, so a burst of typing is one request, not one per keystroke.
+  // Plain tables never refetch. (router.refresh() was wired here but useGrid never
+  // called it, so cross-row values silently went stale until a manual reload.)
+  const hasComputed = React.useMemo(
+    () => fields.some((f) => (COMPUTED_FIELD_TYPES as readonly string[]).includes(f.type)),
+    [fields]
+  );
+  const reloadTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onRecordsChanged = React.useCallback(() => {
+    if (!hasComputed) return;
+    if (reloadTimer.current) clearTimeout(reloadTimer.current);
+    reloadTimer.current = setTimeout(reload, 400);
+  }, [hasComputed, reload]);
+
   const grid = useGrid({
     fields: visibleFields,
     records,
     tableId: table.id,
     applyLocal,
-    onRecordsChanged: () => router.refresh(),
+    onRecordsChanged,
   });
 
   // Someone else's edit lands without a refresh.

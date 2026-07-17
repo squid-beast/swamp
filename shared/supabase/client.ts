@@ -23,6 +23,15 @@ if (!url || !key) {
 const SUPABASE_URL: string = url;
 const SUPABASE_KEY: string = key;
 
+// One client per tab, not one per call.
+//
+// Realtime needs the socket to carry the user's JWT (postgres_changes is RLS-gated
+// and delivers nothing to an anonymous socket). A fresh client per createClient()
+// call meant every hook opened its own socket and its own auth listener, racing to
+// hydrate the session from cookies. A singleton loads the session once and every
+// channel — records, comments — rides the same authenticated connection.
+let client: ReturnType<typeof createBrowserClient> | undefined;
+
 export function createClient() {
-  return createBrowserClient(SUPABASE_URL, SUPABASE_KEY);
+  return (client ??= createBrowserClient(SUPABASE_URL, SUPABASE_KEY));
 }

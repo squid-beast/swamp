@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/shared/ui/button";
 import { cn } from "@/shared/lib/utils";
+import { createClient } from "@/shared/supabase/client";
 import type { AuditEntry, Comment } from "../collaboration";
 import type { Field } from "../types";
 
@@ -92,6 +93,44 @@ function Comments({
     setLoading(true);
     void load();
   }, [load]);
+
+  // Someone else's comment appears without reopening the record.
+  //
+  // The realtime payload is the raw `comments` row and lacks the joined author
+  // name, so rather than merge a half-built comment we just refetch — a thread has
+  // a handful of comments, not thousands, and load() already resolves the name. Our
+  // own post/edit/delete also refetch, so a self-echo is at worst one extra GET.
+  React.useEffect(() => {
+    const supabase = createClient();
+    let cancelled = false;
+    let channel: ReturnType<typeof supabase.channel> | undefined;
+
+    void (async () => {
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      if (token) supabase.realtime.setAuth(token);
+      if (cancelled) return;
+
+      channel = supabase
+        .channel(`comments:${recordId}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "comments",
+            filter: `record_id=eq.${recordId}`,
+          },
+          () => void load()
+        )
+        .subscribe();
+    })();
+
+    return () => {
+      cancelled = true;
+      if (channel) void supabase.removeChannel(channel);
+    };
+  }, [recordId, load]);
 
   const post = async () => {
     if (!body.trim()) return;
