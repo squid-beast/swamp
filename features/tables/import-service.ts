@@ -18,6 +18,17 @@ import type { FieldType } from "./types";
 
 const ROW_CHUNK = 500;
 
+// Imports are bounded so one pasted link can't turn into 10M sequential inserts that
+// blow the function's 60s budget and leave a half-created table behind. Generous
+// enough for real spreadsheets; a hard stop for the pathological ones.
+const MAX_IMPORT_ROWS = 500_000;
+const MAX_IMPORT_COLS = 512;
+
+/** A message that is safe to show the user. Everything else (raw DB errors, bugs)
+ *  is logged server-side and genericised at the route, so schema and policy names
+ *  never reach the client. */
+export class ImportError extends Error {}
+
 export interface ImportResult {
   baseId: string;
   tableId: string;
@@ -85,6 +96,19 @@ export async function importTable(
   parsed: ParsedTable,
   opts: { baseId?: string } = {}
 ): Promise<ImportResult> {
+  // Reject oversized imports BEFORE creating anything, so a rejection never leaves an
+  // orphaned base/table behind.
+  if (parsed.rows.length > MAX_IMPORT_ROWS) {
+    throw new ImportError(
+      `That's ${parsed.rows.length.toLocaleString()} rows — imports are capped at ${MAX_IMPORT_ROWS.toLocaleString()}. Split it and try again.`
+    );
+  }
+  if (parsed.columns.length > MAX_IMPORT_COLS) {
+    throw new ImportError(
+      `That's ${parsed.columns.length} columns — imports are capped at ${MAX_IMPORT_COLS}.`
+    );
+  }
+
   const db = createClient();
 
   // ── Base ──

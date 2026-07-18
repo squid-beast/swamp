@@ -24,6 +24,7 @@ export function ImportPanel() {
 
   const [file, setFile] = React.useState<File | null>(null);
   const [name, setName] = React.useState("");
+  const [url, setUrl] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const [dragging, setDragging] = React.useState(false);
 
@@ -60,13 +61,42 @@ export function ImportPanel() {
     }
   };
 
+  const submitUrl = async () => {
+    if (!url.trim() || busy) return;
+    setBusy(true);
+
+    try {
+      const res = await fetch("/api/import/url", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          url: url.trim(),
+          name: name.trim() || undefined,
+          baseId: baseId || undefined,
+        }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body?.error ?? "Import failed");
+
+      toast.success(
+        `${body.rowCount.toLocaleString()} rows · ${body.fieldCount} fields`
+      );
+      router.refresh();
+      router.push(`/app/t/${body.tableId}`);
+    } catch (e) {
+      toast.error((e as Error).message);
+      setBusy(false);
+    }
+  };
+
   return (
     <main className="mx-auto w-full max-w-lg p-6">
       <h1 className="font-display text-2xl font-extrabold tracking-tight">
         Import data
       </h1>
       <p className="mt-1 text-[13px] text-muted-foreground">
-        CSV, Excel or JSON. Every column gets a type, and you get a table.
+        CSV, Excel or JSON — from a file or a public link. Every column gets a type,
+        and you get a table.
       </p>
 
       <div
@@ -139,6 +169,39 @@ export function ImportPanel() {
         {busy && <Loader2 className="size-3.5 animate-spin" />}
         {busy ? "Importing…" : "Import"}
       </Button>
+
+      <div className="mt-8 flex items-center gap-3 text-[12px] text-muted-foreground">
+        <span className="h-px flex-1 bg-border" />
+        or paste a link
+        <span className="h-px flex-1 bg-border" />
+      </div>
+
+      <div className="mt-4 flex flex-col gap-1.5">
+        <Label htmlFor="import-url" className="text-[12px] text-muted-foreground">
+          Import from a URL
+        </Label>
+        <div className="flex gap-2">
+          <Input
+            id="import-url"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && submitUrl()}
+            placeholder="https://…/data.csv or a public Google Sheet"
+          />
+          <Button
+            variant="outline"
+            onClick={submitUrl}
+            disabled={!url.trim() || busy}
+            className="shrink-0 gap-2"
+          >
+            {busy && <Loader2 className="size-3.5 animate-spin" />}
+            Fetch
+          </Button>
+        </div>
+        <p className="text-[12px] text-muted-foreground">
+          A public CSV or JSON link, or a shared Google Sheet.
+        </p>
+      </div>
     </main>
   );
 }

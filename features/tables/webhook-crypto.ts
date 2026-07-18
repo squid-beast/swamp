@@ -87,7 +87,7 @@ export function isPrivateAddress(ip: string): boolean {
 
   if (v6 === "::1" || v6 === "::") return true; // loopback, unspecified
   if (v6.startsWith("fc") || v6.startsWith("fd")) return true; // unique-local
-  if (v6.startsWith("fe80")) return true; // link-local
+  if (/^fe[89ab]/.test(v6)) return true; // link-local fe80::/10 (fe80–febf), not just /16
 
   // ::ffff:127.0.0.1 — an IPv4 address wearing an IPv6 hat. Miss this and the
   // whole check above is decorative.

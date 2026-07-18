@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { importTable, parseFile } from "@/features/tables/import-service";
+import { importTable, parseFile, ImportError } from "@/features/tables/import-service";
 import { parseJSON } from "@/features/tables/engine/import";
 import { requireAuth } from "@/shared/supabase/server";
 
@@ -63,6 +63,10 @@ export async function POST(req: NextRequest) {
     });
     return NextResponse.json(result);
   } catch (e) {
-    return NextResponse.json({ error: (e as Error).message }, { status: 400 });
+    if (e instanceof ImportError) {
+      return NextResponse.json({ error: e.message }, { status: 400 });
+    }
+    console.error("import failed:", e);
+    return NextResponse.json({ error: "Import failed. Please try again." }, { status: 400 });
   }
 }
