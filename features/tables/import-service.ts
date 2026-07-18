@@ -21,8 +21,8 @@ const ROW_CHUNK = 500;
 // Imports are bounded so one pasted link can't turn into 10M sequential inserts that
 // blow the function's 60s budget and leave a half-created table behind. Generous
 // enough for real spreadsheets; a hard stop for the pathological ones.
-const MAX_IMPORT_ROWS = 500_000;
-const MAX_IMPORT_COLS = 512;
+export const MAX_IMPORT_ROWS = 500_000;
+export const MAX_IMPORT_COLS = 512;
 
 /** A message that is safe to show the user. Everything else (raw DB errors, bugs)
  *  is logged server-side and genericised at the route, so schema and policy names

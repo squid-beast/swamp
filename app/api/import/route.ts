@@ -1,7 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
 import { importTable, parseFile, ImportError } from "@/features/tables/import-service";
+import { applyImport, type ImportDestination } from "@/features/tables/import-apply";
 import { parseJSON } from "@/features/tables/engine/import";
 import { requireAuth } from "@/shared/supabase/server";
+
+// Read the optional destination (new table vs an existing one to upsert into) off a
+// multipart form. Absent tableId → new table, exactly as before.
+function formDestination(form: FormData): ImportDestination {
+  const s = (k: string) => (form.get(k) as string | null)?.trim() || undefined;
+  const mappingRaw = s("mapping");
+  let mapping: Record<string, string> | undefined;
+  if (mappingRaw) {
+    try {
+      mapping = JSON.parse(mappingRaw);
+    } catch {
+      throw new ImportError("Bad column mapping.");
+    }
+  }
+  return { baseId: s("baseId"), tableId: s("tableId"), keyField: s("keyField"), mapping };
+}
 
 // File in, real table out.
 //
@@ -44,9 +61,7 @@ export async function POST(req: NextRequest) {
         file.name.replace(/\.[^.]+$/, "") ||
         "Imported";
 
-      const result = await importTable(name, parsed, {
-        baseId: (form.get("baseId") as string | null) ?? undefined,
-      });
+      const result = await applyImport(name, parsed, formDestination(form));
       return NextResponse.json(result);
     }
 

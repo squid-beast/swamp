@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { importTable, parseFile, ImportError } from "@/features/tables/import-service";
+import { parseFile, ImportError } from "@/features/tables/import-service";
+import { applyImport } from "@/features/tables/import-apply";
 import { fetchImportUrl } from "@/features/tables/engine/import-url";
 import { requireAuth } from "@/shared/supabase/server";
 
@@ -15,7 +16,7 @@ export async function POST(req: NextRequest) {
   if (denied) return denied;
 
   try {
-    const { url, name, baseId } = await req.json();
+    const { url, name, baseId, tableId, keyField, mapping } = await req.json();
     if (!url || typeof url !== "string") {
       return NextResponse.json({ error: "Enter a URL to import." }, { status: 400 });
     }
@@ -31,8 +32,11 @@ export async function POST(req: NextRequest) {
       fetched.filename.replace(/\.[^.]+$/, "") ||
       "Imported";
 
-    const result = await importTable(tableName, parsed, {
+    const result = await applyImport(tableName, parsed, {
       baseId: typeof baseId === "string" ? baseId : undefined,
+      tableId: typeof tableId === "string" ? tableId : undefined,
+      keyField: typeof keyField === "string" ? keyField : undefined,
+      mapping: mapping && typeof mapping === "object" ? mapping : undefined,
     });
     return NextResponse.json(result);
   } catch (e) {
