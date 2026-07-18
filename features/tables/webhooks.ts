@@ -1,8 +1,8 @@
 import "server-only";
-import { lookup } from "node:dns/promises";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/shared/supabase/server";
-import { backoffMs, isPrivateAddress, MAX_ATTEMPTS, sign } from "./webhook-crypto";
+import { safeFetch, SafeFetchError } from "./safe-fetch";
+import { backoffMs, MAX_ATTEMPTS, sign } from "./webhook-crypto";
 import type { FilterNode, Webhook, WebhookDelivery, WebhookEvent } from "./types";
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -153,47 +153,6 @@ export async function fireButton(recordId: string, fieldId: string): Promise<str
 
 const TIMEOUT_MS = 10_000;
 
-/**
- * Refuse to fetch a URL that resolves to somewhere we can reach and the user
- * cannot. See isPrivateAddress: the check is on the RESOLVED address, because a
- * hostname check is defeated by a DNS record pointing at 127.0.0.1.
- *
- * There is a race here and it is worth naming: we resolve, we approve, and then
- * `fetch` resolves again — and a hostile DNS server can answer differently the
- * second time. Closing that properly means dialling the IP ourselves and passing
- * the Host header, which is a custom agent. This check stops the accident and the
- * casual attempt; it does not stop a determined rebinding attack. That is the
- * honest description, and it is written here rather than being discovered later.
- */
-async function refuseIfInternal(url: string): Promise<string | null> {
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    return "not a valid URL";
-  }
-
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    return `refusing to call a ${parsed.protocol} URL`;
-  }
-
-  // Localhost is allowed in development, and only there — otherwise you cannot
-  // test a webhook against a local receiver, which is the first thing anyone does.
-  const local = /^(localhost|127\.|::1|\[::1\])/i.test(parsed.hostname);
-  if (local && process.env.NODE_ENV === "development") return null;
-
-  try {
-    const { address } = await lookup(parsed.hostname);
-    if (isPrivateAddress(address)) {
-      return `refusing to call ${parsed.hostname} — it resolves to a private address`;
-    }
-  } catch {
-    return `cannot resolve ${parsed.hostname}`;
-  }
-
-  return null;
-}
-
 interface Claimed {
   id: string;
   webhook_id: string;
@@ -281,20 +240,14 @@ export async function dispatchPending(
         return settle({ status: "dead", error: "webhook is inactive or deleted" });
       }
 
-      const refusal = await refuseIfInternal(hook.url);
-      if (refusal) {
-        dead++;
-        return settle({ status: "dead", error: refusal });
-      }
-
       const body = JSON.stringify(d.payload);
       const timestamp = Math.floor(Date.now() / 1000).toString();
 
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
-
       try {
-        const res = await fetch(hook.url, {
+        // safeFetch pins the connection to a validated public IP (a 302 to
+        // 169.254.169.254 is reported, not chased — maxRedirects 0) and caps the
+        // body it reads; we keep only a 2 KB snippet for the log.
+        const res = await safeFetch(hook.url, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -305,13 +258,13 @@ export async function dispatchPending(
             "X-Swamp-Signature": sign(hook.secret, timestamp, body),
           },
           body,
-          signal: controller.signal,
-          redirect: "manual", // a 302 to 169.254.169.254 walks straight past the check above
+          timeoutMs: TIMEOUT_MS,
+          maxRedirects: 0,
+          maxBytes: 64 * 1024,
+          truncate: true,
         });
 
-        // Truncated. A receiver that returns a 4MB HTML error page must not be
-        // able to put 4MB in our database, once per retry, forever.
-        const text = (await res.text().catch(() => "")).slice(0, 2000);
+        const text = new TextDecoder().decode(res.buf).slice(0, 2000);
 
         if (res.ok) {
           delivered++;
@@ -331,8 +284,14 @@ export async function dispatchPending(
           next_attempt_at: new Date(Date.now() + backoffMs(attempts)).toISOString(),
         });
       } catch (e) {
-        const message = (e as Error).name === "AbortError" ? "timed out" : (e as Error).message;
+        // A safety refusal (private address, bad protocol, redirect loop) is
+        // permanent — mark dead, don't retry. A timeout or reset is transient.
+        if (e instanceof SafeFetchError && e.refused) {
+          dead++;
+          return settle({ status: "dead", error: e.message });
+        }
 
+        const message = (e as Error).message || "delivery failed";
         if (attempts >= MAX_ATTEMPTS) {
           dead++;
           return settle({ status: "dead", error: message });
@@ -344,8 +303,6 @@ export async function dispatchPending(
           error: message,
           next_attempt_at: new Date(Date.now() + backoffMs(attempts)).toISOString(),
         });
-      } finally {
-        clearTimeout(timer);
       }
     })
   );
