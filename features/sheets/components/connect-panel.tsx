@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Loader2, Check, ArrowRight } from "lucide-react";
+import { Loader2, Check } from "lucide-react";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 import { Label } from "@/shared/ui/label";
@@ -16,6 +16,7 @@ import {
 } from "@/shared/ui/select";
 import { createClient } from "@/shared/supabase/client";
 import { cn } from "@/shared/lib/utils";
+import { ImportDestination, type Destination } from "@/features/tables/components/import-destination";
 
 type StepState = "done" | "active" | "todo";
 
@@ -64,6 +65,7 @@ export function ConnectPanel({ googleConnected }: { googleConnected: boolean }) 
   const [spreadsheetId, setSpreadsheetId] = React.useState("");
   const [tabs, setTabs] = React.useState<string[] | null>(null);
   const [tab, setTab] = React.useState("");
+  const [sheetColumns, setSheetColumns] = React.useState<string[] | null>(null);
   const [busy, setBusy] = React.useState<false | "tabs" | "create">(false);
 
   const connectGoogle = async () => {
@@ -90,20 +92,42 @@ export function ConnectPanel({ googleConnected }: { googleConnected: boolean }) 
     if (!res.ok) return toast.error(json.error ?? "Could not read the sheet");
     setSpreadsheetId(json.spreadsheetId);
     setTabs(json.tabs);
-    setTab(json.tabs[0] ?? "");
+    void chooseTab(json.tabs[0] ?? "", json.spreadsheetId);
   };
 
-  const create = async () => {
+  const chooseTab = async (t: string, sid?: string) => {
+    setTab(t);
+    setSheetColumns(null);
+    if (!t) return;
+    const res = await fetch("/api/sheets/preview", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ spreadsheetId: sid ?? spreadsheetId, sheetTitle: t }),
+    });
+    const json = await res.json();
+    if (!res.ok) return toast.error(json.error ?? "Couldn't read that tab");
+    setSheetColumns(json.columns as string[]);
+  };
+
+  const doConnect = async (dest: Destination) => {
     setBusy("create");
     const res = await fetch("/api/sheets/connect", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ spreadsheetId, sheetTitle: tab }),
+      body: JSON.stringify({
+        spreadsheetId,
+        sheetTitle: tab,
+        ...(dest.mode === "new"
+          ? { name: dest.name }
+          : { tableId: dest.tableId, keyField: dest.keyField, mapping: dest.mapping }),
+      }),
     });
     const json = await res.json();
     setBusy(false);
     if (!res.ok) return toast.error(json.error ?? "Could not connect the sheet");
-    toast.success("Sheet connected");
+    toast.success(
+      json.mode === "upsert" ? `${json.updated} updated · ${json.added} added` : "Sheet connected"
+    );
     router.push(`/app/t/${json.tableId}`);
     router.refresh();
   };
@@ -169,14 +193,14 @@ export function ConnectPanel({ googleConnected }: { googleConnected: boolean }) 
       </Step>
 
       {/* Step 3 — pick a tab and create */}
-      <Step n={3} title="Choose a tab and create the table" state={step3State} last>
+      <Step n={3} title="Choose a tab and import" state={step3State} last>
         {tabs ? (
-          <div className="flex flex-col gap-2.5">
+          <div className="flex flex-col gap-3">
             <div className="flex flex-col gap-1.5">
               <Label id="tab-label" className="text-[12px] text-muted-foreground">
                 Tab
               </Label>
-              <Select value={tab} onValueChange={setTab}>
+              <Select value={tab} onValueChange={(t) => void chooseTab(t)}>
                 <SelectTrigger aria-labelledby="tab-label">
                   <SelectValue placeholder="Choose a tab" />
                 </SelectTrigger>
@@ -189,13 +213,23 @@ export function ConnectPanel({ googleConnected }: { googleConnected: boolean }) 
                 </SelectContent>
               </Select>
             </div>
-            <Button onClick={create} disabled={busy !== false || !tab} className="w-fit gap-2">
-              {busy === "create" && <Loader2 className="size-4 animate-spin" />}
-              Create table
-              <ArrowRight className="size-4" />
-            </Button>
+
+            {sheetColumns ? (
+              <ImportDestination
+                columns={sheetColumns}
+                defaultName={tab}
+                busy={busy === "create"}
+                onApply={doConnect}
+              />
+            ) : tab ? (
+              <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
+                <Loader2 className="size-3.5 animate-spin" /> Reading columns…
+              </div>
+            ) : null}
+
             <p className="text-[12px] text-muted-foreground">
-              Row 1 becomes the header. New form responses append automatically.
+              New table stays live-synced — new form responses append automatically. An
+              existing table is a one-time import.
             </p>
           </div>
         ) : (

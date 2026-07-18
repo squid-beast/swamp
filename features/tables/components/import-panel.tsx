@@ -6,43 +6,21 @@ import { toast } from "sonner";
 import { ArrowLeft, ArrowRight, FileSpreadsheet, Loader2, UploadCloud } from "lucide-react";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
-import { Label } from "@/shared/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/shared/ui/select";
 import { cn } from "@/shared/lib/utils";
-import { isReadOnlyField, type FieldType } from "../types";
+import { ImportDestination, type Destination } from "./import-destination";
 
 // Import a file or a link → a real table.
 //
-// Two screens. First choose a source (file or URL) and preview it (columns + row
-// count, nothing written). Then choose where it lands: a brand-new table, or an
-// existing one — upserting by a key column you pick, with the incoming columns
-// mapped to the table's fields (auto-matched by name, editable).
+// Two screens: choose a source (file or URL) and preview it (columns + row count,
+// nothing written), then choose where it lands (ImportDestination: new table, or an
+// existing one to upsert into).
 
 const ACCEPT = ".csv,.tsv,.xlsx,.xls,.json";
-const SKIP = "__skip__";
 
 interface Preview {
   columns: string[];
   sample: Record<string, unknown>[];
   rowCount: number;
-}
-interface DestTable {
-  id: string;
-  name: string;
-  baseId: string;
-  baseName: string;
-}
-interface DestField {
-  id: string;
-  key: string;
-  name: string;
-  type: string;
 }
 
 export function ImportPanel() {
@@ -55,14 +33,7 @@ export function ImportPanel() {
   const [name, setName] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const [dragging, setDragging] = React.useState(false);
-
   const [preview, setPreview] = React.useState<Preview | null>(null);
-  const [destMode, setDestMode] = React.useState<"new" | "existing">("new");
-  const [tables, setTables] = React.useState<DestTable[]>([]);
-  const [tableId, setTableId] = React.useState("");
-  const [fields, setFields] = React.useState<DestField[]>([]);
-  const [mapping, setMapping] = React.useState<Record<string, string>>({});
-  const [keyField, setKeyField] = React.useState("");
 
   const source: "file" | "url" | null = file ? "file" : url.trim() ? "url" : null;
 
@@ -71,7 +42,12 @@ export function ImportPanel() {
     if (f && !name) setName(f.name.replace(/\.[^.]+$/, ""));
   };
 
-  // ─── Step 1 → 2: preview ───
+  const fileForm = () => {
+    const form = new FormData();
+    form.append("file", file as File);
+    return form;
+  };
+
   const doPreview = async () => {
     if (!source || busy) return;
     setBusy(true);
@@ -86,11 +62,6 @@ export function ImportPanel() {
       const body = await res.json();
       if (!res.ok) throw new Error(body?.error ?? "Couldn't read that source");
       setPreview(body as Preview);
-      if (!tables.length) {
-        const t = await fetch("/api/import/tables");
-        if (t.ok) setTables((await t.json()).tables as DestTable[]);
-        else toast.error("Couldn't load your tables");
-      }
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
@@ -98,68 +69,20 @@ export function ImportPanel() {
     }
   };
 
-  const fileForm = () => {
-    const form = new FormData();
-    form.append("file", file as File);
-    return form;
-  };
-
-  const writableFields = React.useMemo(
-    () => fields.filter((f) => !isReadOnlyField(f.type as FieldType)),
-    [fields]
-  );
-
-  const onSelectTable = async (id: string) => {
-    setTableId(id);
-    setFields([]);
-    setKeyField("");
-    const res = await fetch(`/api/tables/${id}/fields`);
-    if (!res.ok) return toast.error("Couldn't load that table's columns");
-    const flds = (await res.json()).fields as DestField[];
-    setFields(flds);
-
-    // Auto-match incoming columns to fields by name.
-    const byName = new Map(
-      flds
-        .filter((f) => !isReadOnlyField(f.type as FieldType))
-        .map((f) => [f.name.trim().toLowerCase(), f.key])
-    );
-    const m: Record<string, string> = {};
-    for (const c of preview?.columns ?? []) m[c] = byName.get(c.trim().toLowerCase()) ?? "";
-    setMapping(m);
-
-    const mapped = Object.values(m).filter(Boolean);
-    const preferred = flds.find(
-      (f) => mapped.includes(f.key) && /^(id|email|uuid|key)$/i.test(f.name.trim())
-    );
-    setKeyField(preferred?.key ?? mapped[0] ?? "");
-  };
-
-  const mappedKeys = React.useMemo(
-    () => new Set(Object.values(mapping).filter(Boolean)),
-    [mapping]
-  );
-
-  // ─── Step 2: apply ───
-  const doImport = async () => {
+  const doImport = async (dest: Destination) => {
     if (!source || busy) return;
-    if (destMode === "existing") {
-      if (!tableId) return toast.error("Pick a table to import into");
-      if (!keyField) return toast.error("Pick a column to match on");
-      if (!mappedKeys.has(keyField)) return toast.error("Map a column to the match field");
-    }
     setBusy(true);
-
     try {
       let res: Response;
       if (file) {
         const form = fileForm();
-        if (name.trim()) form.append("name", name.trim());
         if (baseId) form.append("baseId", baseId);
-        if (destMode === "existing") {
-          form.append("tableId", tableId);
-          form.append("keyField", keyField);
-          form.append("mapping", JSON.stringify(mapping));
+        if (dest.mode === "new") {
+          if (dest.name.trim()) form.append("name", dest.name.trim());
+        } else {
+          form.append("tableId", dest.tableId);
+          form.append("keyField", dest.keyField);
+          form.append("mapping", JSON.stringify(dest.mapping));
         }
         res = await fetch("/api/import", { method: "POST", body: form });
       } else {
@@ -168,9 +91,10 @@ export function ImportPanel() {
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             url: url.trim(),
-            name: name.trim() || undefined,
             baseId: baseId || undefined,
-            ...(destMode === "existing" ? { tableId, keyField, mapping } : {}),
+            ...(dest.mode === "new"
+              ? { name: dest.name.trim() || undefined }
+              : { tableId: dest.tableId, keyField: dest.keyField, mapping: dest.mapping }),
           }),
         });
       }
@@ -289,117 +213,14 @@ export function ImportPanel() {
         {file ? file.name : "the link"}.
       </p>
 
-      <div className="mt-5 grid grid-cols-2 gap-2">
-        {(["new", "existing"] as const).map((m) => (
-          <button
-            key={m}
-            onClick={() => setDestMode(m)}
-            className={cn(
-              "rounded-lg border px-3 py-2.5 text-left text-[13px] transition-colors",
-              destMode === m ? "border-brand bg-brand/5" : "hover:bg-muted/50"
-            )}
-          >
-            <span className="font-medium">{m === "new" ? "New table" : "Existing table"}</span>
-            <span className="mt-0.5 block text-[12px] text-muted-foreground">
-              {m === "new" ? "Create a fresh table" : "Add / update rows by a key"}
-            </span>
-          </button>
-        ))}
+      <div className="mt-5">
+        <ImportDestination
+          columns={preview.columns}
+          defaultName={name || "Imported"}
+          busy={busy}
+          onApply={doImport}
+        />
       </div>
-
-      {destMode === "new" ? (
-        <div className="mt-5 flex flex-col gap-1.5">
-          <Label htmlFor="table-name" className="text-[12px] text-muted-foreground">
-            Table name
-          </Label>
-          <Input
-            id="table-name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Imported"
-          />
-        </div>
-      ) : (
-        <div className="mt-5 flex flex-col gap-4">
-          <div className="flex flex-col gap-1.5">
-            <Label className="text-[12px] text-muted-foreground">Table</Label>
-            <Select value={tableId} onValueChange={onSelectTable}>
-              <SelectTrigger>
-                <SelectValue placeholder="Choose a table" />
-              </SelectTrigger>
-              <SelectContent>
-                {tables.map((t) => (
-                  <SelectItem key={t.id} value={t.id}>
-                    {t.baseName} / {t.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {fields.length > 0 && (
-            <>
-              <div className="flex flex-col gap-1.5">
-                <Label className="text-[12px] text-muted-foreground">Match rows on</Label>
-                <Select value={keyField} onValueChange={setKeyField}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Pick a key column" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {writableFields
-                      .filter((f) => mappedKeys.has(f.key))
-                      .map((f) => (
-                        <SelectItem key={f.key} value={f.key}>
-                          {f.name}
-                        </SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-[12px] text-muted-foreground">
-                  Rows with a matching value update; the rest are added. Untouched rows stay.
-                </p>
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <Label className="text-[12px] text-muted-foreground">Column mapping</Label>
-                <div className="flex flex-col gap-1.5 rounded-lg border p-2">
-                  {preview.columns.map((col) => (
-                    <div key={col} className="flex items-center gap-2">
-                      <span className="w-1/2 truncate text-[13px]" title={col}>
-                        {col}
-                      </span>
-                      <ArrowRight className="size-3 shrink-0 text-muted-foreground" />
-                      <Select
-                        value={mapping[col] || SKIP}
-                        onValueChange={(v) =>
-                          setMapping((m) => ({ ...m, [col]: v === SKIP ? "" : v }))
-                        }
-                      >
-                        <SelectTrigger className="h-8 w-1/2 text-[12px]">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value={SKIP}>Skip</SelectItem>
-                          {writableFields.map((f) => (
-                            <SelectItem key={f.key} value={f.key}>
-                              {f.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-      )}
-
-      <Button onClick={doImport} disabled={busy} className="mt-6 w-full gap-2">
-        {busy && <Loader2 className="size-3.5 animate-spin" />}
-        {busy ? "Importing…" : destMode === "new" ? "Create table" : "Import"}
-      </Button>
     </main>
   );
 }
