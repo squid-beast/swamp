@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, getUserId } from "@/shared/supabase/server";
-import { getAccessToken, listSheetTitles, parseSpreadsheetId, isGoogleConfigured, hasSheetsScope } from "@/features/sheets/google/sheets";
+import { getAccessToken, getSpreadsheetInfo, parseSpreadsheetId, isGoogleConfigured, hasSheetsScope } from "@/features/sheets/google/sheets";
 
 // List a spreadsheet's tab titles for the connect flow.
 export async function POST(req: NextRequest) {
@@ -30,17 +30,25 @@ export async function POST(req: NextRequest) {
   }
   try {
     const token = await getAccessToken(cred.refresh_token);
-    const tabs = await listSheetTitles(token, spreadsheetId);
-    return NextResponse.json({ spreadsheetId, tabs });
+    const { title, tabs } = await getSpreadsheetInfo(token, spreadsheetId);
+    return NextResponse.json({ spreadsheetId, title, tabs });
   } catch (e) {
     const msg = (e as Error).message;
-    // A 403 from Google means the token can't read this sheet — a scope or sharing
-    // gap, not a server fault. Say so plainly instead of emitting a bare 502.
+    // A 403 from Google means the token can't read this sheet. There are three real
+    // causes and they need different fixes, so surface Google's own reason:
+    //   • "…API has not been used in project… or it is disabled" → enable the
+    //     Google Sheets API in Cloud Console (most common on a new project).
+    //   • "The caller does not have permission" → the connected Google account
+    //     isn't shared on this sheet (or it's the wrong account).
+    //   • "insufficient authentication scopes" → reconnect to grant Sheets read.
     if (msg.includes("(403)")) {
+      const disabled = /has not been used in project|is disabled|SERVICE_DISABLED/i.test(msg);
       return NextResponse.json(
         {
-          error:
-            "Google denied access to this sheet. Reconnect Google to grant Sheets access, or make sure the sheet is shared with your account.",
+          error: disabled
+            ? "The Google Sheets API isn't enabled for this app's Google Cloud project. Enable it in Google Cloud Console → APIs & Services → Library → Google Sheets API."
+            : "Google denied access to this sheet. Make sure the sheet is shared with the connected Google account, or reconnect Google to grant Sheets access.",
+          detail: msg,
         },
         { status: 403 }
       );

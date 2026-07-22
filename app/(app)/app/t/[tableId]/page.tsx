@@ -3,6 +3,8 @@ import { getTable, listFields, listTables, listViews } from "@/features/tables/r
 import { loadViewConfig } from "@/features/tables/view-config";
 import { TableWorkspace } from "@/features/tables/components/table-workspace";
 import { createClient } from "@/shared/supabase/server";
+import { isGoogleConfigured } from "@/features/sheets/google/sheets";
+import { resyncSheetTable } from "@/features/sheets/resync";
 import type { Role } from "@/features/tables/types";
 
 // The table workspace.
@@ -32,6 +34,28 @@ export default async function TablePage({
 
   const table = await getTable(params.tableId);
   if (!table) notFound();
+
+  // If this table is a live Google Sheet connection, pull the latest rows before
+  // rendering so opening (or refreshing) the table shows new form responses
+  // automatically — no manual "Sync now" needed. Throttled so a burst of loads
+  // doesn't hammer Google, and strictly best-effort: a revoked token or a Google
+  // 403 must never break viewing the table, it just shows what's already stored.
+  if (isGoogleConfigured) {
+    try {
+      const { data: cred } = await supabase
+        .from("google_credentials")
+        .select("refresh_token")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (cred?.refresh_token) {
+        await resyncSheetTable(supabase, params.tableId, cred.refresh_token, {
+          minIntervalMs: 15_000,
+        });
+      }
+    } catch {
+      // ignore — a sheet sync failure must not block the table
+    }
+  }
 
   const [fields, views, tables] = await Promise.all([
     listFields(params.tableId),

@@ -63,6 +63,7 @@ export function ConnectPanel({ googleConnected }: { googleConnected: boolean }) 
   const router = useRouter();
   const [url, setUrl] = React.useState("");
   const [spreadsheetId, setSpreadsheetId] = React.useState("");
+  const [spreadsheetTitle, setSpreadsheetTitle] = React.useState("");
   const [tabs, setTabs] = React.useState<string[] | null>(null);
   const [tab, setTab] = React.useState("");
   const [sheetColumns, setSheetColumns] = React.useState<string[] | null>(null);
@@ -91,6 +92,7 @@ export function ConnectPanel({ googleConnected }: { googleConnected: boolean }) 
     setBusy(false);
     if (!res.ok) return toast.error(json.error ?? "Could not read the sheet");
     setSpreadsheetId(json.spreadsheetId);
+    setSpreadsheetTitle(json.title ?? "");
     setTabs(json.tabs);
     void chooseTab(json.tabs[0] ?? "", json.spreadsheetId);
   };
@@ -117,8 +119,10 @@ export function ConnectPanel({ googleConnected }: { googleConnected: boolean }) 
       body: JSON.stringify({
         spreadsheetId,
         sheetTitle: tab,
+        // New table lands in a base named after the spreadsheet file, so a
+        // one-sheet import doesn't repeat the same name for base and table.
         ...(dest.mode === "new"
-          ? { name: dest.name }
+          ? { name: dest.name, baseName: spreadsheetTitle }
           : { tableId: dest.tableId, keyField: dest.keyField, mapping: dest.mapping }),
       }),
     });
@@ -228,8 +232,8 @@ export function ConnectPanel({ googleConnected }: { googleConnected: boolean }) 
             ) : null}
 
             <p className="text-[12px] text-muted-foreground">
-              New table stays live-synced — new form responses append automatically. An
-              existing table is a one-time import.
+              A new table stays connected — new form responses are pulled in each time
+              you open or refresh the table. An existing table is a one-time import.
             </p>
           </div>
         ) : (

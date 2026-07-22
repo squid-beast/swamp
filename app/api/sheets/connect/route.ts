@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Google Sheets isn't configured on the server." }, { status: 400 });
   }
 
-  const { spreadsheetId, sheetTitle, name, baseId, tableId, keyField, mapping } = await req.json();
+  const { spreadsheetId, sheetTitle, name, baseName, baseId, tableId, keyField, mapping } = await req.json();
   if (!spreadsheetId || !sheetTitle) {
     return NextResponse.json({ error: "Pick a spreadsheet and a tab." }, { status: 400 });
   }
@@ -57,7 +57,17 @@ export async function POST(req: NextRequest) {
     }
 
     // New table: import it and record the connection so it re-syncs.
-    const result = await importTable(name || sheetTitle, parsed, { baseId });
+    //
+    // Into a NEW base, the base is named after the spreadsheet's file title and the
+    // table after the tab — so a one-sheet import doesn't show the same name twice,
+    // nested. When appending to an EXISTING base (baseId set), only the table is
+    // created, named after the tab (or the user's chosen name).
+    const tableName = name || sheetTitle;
+    const result = await importTable(
+      baseId ? tableName : baseName || tableName,
+      parsed,
+      { baseId, tableName }
+    );
     const { error } = await supabase.from("sheet_connections").insert({
       id: `sc_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`,
       owner_id: userId,

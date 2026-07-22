@@ -94,7 +94,7 @@ function toRecordData(
 export async function importTable(
   name: string,
   parsed: ParsedTable,
-  opts: { baseId?: string } = {}
+  opts: { baseId?: string; tableName?: string } = {}
 ): Promise<ImportResult> {
   // Reject oversized imports BEFORE creating anything, so a rejection never leaves an
   // orphaned base/table behind.
@@ -125,9 +125,13 @@ export async function importTable(
   }
 
   // ── Table ──
+  // The table can be named independently of its base. A Google Sheet, for
+  // instance, gives the base the spreadsheet's file title and the table the tab
+  // title — otherwise a one-sheet import shows the same name twice, nested.
+  const tableName = opts.tableName?.trim() || name;
   const { data: table, error: tableError } = await db
     .from("tables")
-    .insert({ base_id: baseId, name })
+    .insert({ base_id: baseId, name: tableName })
     .select("id")
     .single();
   if (tableError) throw new Error(`create table: ${tableError.message}`);

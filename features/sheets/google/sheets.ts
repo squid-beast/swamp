@@ -47,16 +47,44 @@ export async function getAccessToken(refreshToken: string): Promise<string> {
   return json.access_token;
 }
 
-// The tab titles in a spreadsheet.
-export async function listSheetTitles(
+/** Pull Google's real error reason out of a failed Sheets response so a 403 says
+ *  WHICH 403 it is: the API being disabled, the account lacking access to this
+ *  sheet, or an insufficient scope. Google returns { error: { message, status } }. */
+async function googleErrorDetail(res: Response): Promise<string> {
+  try {
+    const json = (await res.json()) as { error?: { message?: string; status?: string } };
+    const msg = json.error?.message?.trim();
+    return msg ? ` — ${msg}` : "";
+  } catch {
+    return "";
+  }
+}
+
+/** A spreadsheet's own file title plus its tab titles. The file title names the
+ *  base on import; the tab title names the table. Fetched in one metadata call so
+ *  a one-sheet import never shows the same name twice. */
+export interface SpreadsheetInfo {
+  title: string;
+  tabs: string[];
+}
+
+export async function getSpreadsheetInfo(
   accessToken: string,
   spreadsheetId: string
-): Promise<string[]> {
-  const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties.title`;
+): Promise<SpreadsheetInfo> {
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=properties.title,sheets.properties.title`;
   const res = await fetch(url, { headers: { authorization: `Bearer ${accessToken}` } });
-  if (!res.ok) throw new Error(`sheets metadata failed (${res.status})`);
-  const json = (await res.json()) as { sheets?: { properties: { title: string } }[] };
-  return (json.sheets ?? []).map((s) => s.properties.title);
+  if (!res.ok) {
+    throw new Error(`sheets metadata failed (${res.status})${await googleErrorDetail(res)}`);
+  }
+  const json = (await res.json()) as {
+    properties?: { title?: string };
+    sheets?: { properties: { title: string } }[];
+  };
+  return {
+    title: json.properties?.title?.trim() || "Imported sheet",
+    tabs: (json.sheets ?? []).map((s) => s.properties.title),
+  };
 }
 
 export type SheetTable = { columns: string[]; rows: Record<string, string>[] };
@@ -70,7 +98,9 @@ export async function readSheet(
   const range = encodeURIComponent(sheetTitle);
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}?majorDimension=ROWS`;
   const res = await fetch(url, { headers: { authorization: `Bearer ${accessToken}` } });
-  if (!res.ok) throw new Error(`sheets read failed (${res.status})`);
+  if (!res.ok) {
+    throw new Error(`sheets read failed (${res.status})${await googleErrorDetail(res)}`);
+  }
   const json = (await res.json()) as { values?: string[][] };
   const values = json.values ?? [];
   const header = values[0] ?? [];
