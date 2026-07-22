@@ -1,3 +1,4 @@
+import { OPTION_PALETTE } from "../types";
 import type { FieldType, SelectOption } from "../types";
 import type { InferredField } from "./types";
 
@@ -56,7 +57,7 @@ const STATUS_HINTS = [
   "published", "new", "won", "lost", "blocked", "review", "complete", "cancelled",
 ];
 
-const PALETTE = ["amber", "violet", "teal", "rose", "sky", "lime", "orange", "fuchsia"];
+const PALETTE = OPTION_PALETTE;
 
 // Excel cell-format signal for a column (from engine/import.ts).
 export type FormatHint = { currency?: boolean; percent?: boolean; textFormatted?: boolean };

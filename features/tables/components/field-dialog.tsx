@@ -26,6 +26,7 @@ import {
 import {
   BARCODE_FORMATS,
   BARCODE_SOURCE_TYPES,
+  OPTION_PALETTE,
   SCALAR_FIELD_TYPES,
   isComputedField,
   type Field,
@@ -105,9 +106,14 @@ const PLATFORM_TYPES: { value: FieldType; label: string; hint: string }[] = [
   { value: "modifiedTime", label: "Last modified time", hint: "When it changed. Automatic" },
   { value: "barcode", label: "Barcode", hint: "Draws another field as a barcode" },
   { value: "qr", label: "QR code", hint: "Draws another field as a QR code" },
+  {
+    value: "autoNumber",
+    label: "Auto number",
+    hint: "A durable id, assigned automatically",
+  },
 ];
 
-const PALETTE = ["amber", "violet", "teal", "rose", "sky", "lime", "orange", "fuchsia"];
+const PALETTE = OPTION_PALETTE;
 
 export function FieldDialog({
   open,
@@ -147,6 +153,10 @@ export function FieldDialog({
   const [webhookId, setWebhookId] = React.useState("");
   const [webhooks, setWebhooks] = React.useState<{ id: string; name: string }[]>([]);
 
+  // autoNumber — display only.
+  const [prefix, setPrefix] = React.useState("");
+  const [padding, setPadding] = React.useState(0);
+
   const baseId = fields[0]?.baseId;
 
   /** What a barcode/QR may point at.
@@ -180,6 +190,8 @@ export function FieldDialog({
     setLabel(field?.options.label ?? "");
     setExpr(field?.options.exprRaw ?? "");
     setWebhookId(field?.options.webhookId ?? "");
+    setPrefix(field?.options.prefix ?? "");
+    setPadding(field?.options.padding ?? 0);
   }, [open, field]);
 
   // A webhook button needs a webhook to point at. Load them lazily — most fields
@@ -241,6 +253,12 @@ export function FieldDialog({
           ? {
               ...(sourceFieldId ? { sourceFieldId } : {}),
               ...(type === "barcode" ? { barcodeFormat } : {}),
+            }
+          : {}),
+        ...(type === "autoNumber"
+          ? {
+              ...(prefix.trim() ? { prefix: prefix.trim() } : {}),
+              ...(padding > 0 ? { padding } : {}),
             }
           : {}),
         ...buttonOptions(),
@@ -432,6 +450,48 @@ export function FieldDialog({
                   </p>
                 </div>
               )}
+            </div>
+          )}
+
+          {type === "autoNumber" && (
+            <div className="flex flex-col gap-3">
+              <p className="text-[11px] leading-relaxed text-muted-foreground">
+                The number is assigned by the database when a record is created and
+                never changes — not by import, not by the API, not by an edit. These
+                two settings only change how it looks.
+              </p>
+              <div className="flex gap-3">
+                <div className="flex flex-1 flex-col gap-1.5">
+                  <Label className="text-[12px] text-muted-foreground">
+                    Prefix (optional)
+                  </Label>
+                  <Input
+                    value={prefix}
+                    onChange={(e) => setPrefix(e.target.value.slice(0, 20))}
+                    placeholder="LEAD-"
+                  />
+                </div>
+                <div className="flex w-28 flex-col gap-1.5">
+                  <Label className="text-[12px] text-muted-foreground">Min digits</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={20}
+                    value={padding || ""}
+                    onChange={(e) =>
+                      setPadding(
+                        Math.max(0, Math.min(20, Math.floor(Number(e.target.value) || 0)))
+                      )
+                    }
+                    placeholder="0"
+                  />
+                </div>
+              </div>
+              <p className="text-[11px] leading-relaxed text-muted-foreground">
+                {prefix.trim() || padding > 0
+                  ? `Record 7 will read “${prefix.trim()}${String(7).padStart(padding, "0")}”.`
+                  : "Record 7 will read “7”."}
+              </p>
             </div>
           )}
 

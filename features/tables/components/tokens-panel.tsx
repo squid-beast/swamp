@@ -45,18 +45,26 @@ const DEFAULT_DAYS = 90;
 export function TokensPanel({
   baseId,
   baseName,
+  tables = [],
   tokens: initial,
 }: {
   baseId: string;
   baseName: string;
+  tables?: { id: string; name: string }[];
   tokens: ApiToken[];
 }) {
   const [tokens, setTokens] = React.useState(initial);
   const [name, setName] = React.useState("");
   const [scopes, setScopes] = React.useState<TokenScope[]>(["records:read"]);
+  const [tableIds, setTableIds] = React.useState<string[]>([]);
   const [days, setDays] = React.useState(String(DEFAULT_DAYS));
   const [minted, setMinted] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
+
+  const tableName = React.useCallback(
+    (id: string) => tables.find((t) => t.id === id)?.name ?? "a table",
+    [tables]
+  );
 
   const reload = async () => {
     const res = await fetch(`/api/bases/${baseId}/tokens`);
@@ -65,6 +73,9 @@ export function TokensPanel({
 
   const toggle = (scope: TokenScope) =>
     setScopes((s) => (s.includes(scope) ? s.filter((x) => x !== scope) : [...s, scope]));
+
+  const toggleTable = (id: string) =>
+    setTableIds((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
 
   const create = async () => {
     if (!name.trim() || !scopes.length || busy) return;
@@ -79,7 +90,7 @@ export function TokensPanel({
     const res = await fetch(`/api/bases/${baseId}/tokens`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: name.trim(), scopes, expiresAt }),
+      body: JSON.stringify({ name: name.trim(), scopes, expiresAt, tableIds }),
     });
 
     setBusy(false);
@@ -92,6 +103,7 @@ export function TokensPanel({
     const body = await res.json();
     setMinted(body.token as string);
     setName("");
+    setTableIds([]);
     await reload();
   };
 
@@ -112,6 +124,20 @@ export function TokensPanel({
         A token acts as <strong>you</strong>. It can never do more than you can — if
         your role changes, so does what it can reach, on the next request.
       </p>
+
+      <div className="mt-3 flex flex-col gap-1 rounded-lg border bg-muted/30 px-3 py-2 text-[12px] text-muted-foreground">
+        <span>
+          REST reference:{" "}
+          <a href="/api/v1/docs" target="_blank" rel="noreferrer" className="font-medium underline">
+            /api/v1/docs
+          </a>
+        </span>
+        <span>
+          MCP endpoint (for AI agents like Claude or Cursor):{" "}
+          <code className="font-mono">/api/v1/mcp</code> — authenticate with{" "}
+          <code className="font-mono">Authorization: Bearer &lt;token&gt;</code>.
+        </span>
+      </div>
 
       {minted && (
         <section
@@ -178,6 +204,29 @@ export function TokensPanel({
           ))}
         </div>
 
+        {tables.length > 0 && (
+          <div className="flex flex-col gap-2">
+            <Label className="text-[12px] text-muted-foreground">
+              Tables it can reach
+            </Label>
+            <p className="text-[12px] text-muted-foreground">
+              Leave all unticked for the whole base. Tick some to pin the token —
+              a lead-ingest key that can only reach the tables it needs.
+            </p>
+            <div className="flex flex-col gap-1.5">
+              {tables.map((t) => (
+                <label key={t.id} className="flex items-center gap-2 text-[13px]">
+                  <Checkbox
+                    checked={tableIds.includes(t.id)}
+                    onCheckedChange={() => toggleTable(t.id)}
+                  />
+                  <span className="truncate">{t.name}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="flex items-center gap-2">
           <Label className="text-[12px] text-muted-foreground">Expires in</Label>
           <Input
@@ -217,7 +266,10 @@ export function TokensPanel({
               <span className="truncate text-[13px]">{t.name}</span>
               <span className="truncate text-[11px] text-muted-foreground">
                 <span className="font-mono">{t.prefix}…</span> ·{" "}
-                {t.scopes.map(scopeLabel).join(", ")}
+                {t.scopes.map(scopeLabel).join(", ")} ·{" "}
+                {t.tableIds.length
+                  ? t.tableIds.map(tableName).join(", ")
+                  : "all tables"}
               </span>
             </div>
 

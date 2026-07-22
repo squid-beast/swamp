@@ -32,8 +32,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   }
 
   try {
-    const { name, scopes, expiresAt } = parsed.data;
-    const created = await createToken(params.id, name, scopes, expiresAt ?? null);
+    const { name, scopes, expiresAt, tableIds } = parsed.data;
+    const created = await createToken(params.id, name, scopes, expiresAt ?? null, tableIds ?? []);
 
     return NextResponse.json(created, { status: 201 });
   } catch (e) {

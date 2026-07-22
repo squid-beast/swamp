@@ -3,7 +3,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/shared/supabase/server";
 import { safeFetch, SafeFetchError } from "./safe-fetch";
 import { backoffMs, MAX_ATTEMPTS, sign } from "./webhook-crypto";
-import type { FilterNode, Webhook, WebhookDelivery, WebhookEvent } from "./types";
+import { buildDeliveryBody } from "./webhook-format";
+import type { FilterNode, Webhook, WebhookDelivery, WebhookEvent, WebhookKind } from "./types";
 
 // ════════════════════════════════════════════════════════════════════════════
 // Webhooks.
@@ -34,12 +35,14 @@ const toWebhook = (r: Row): Webhook => ({
   events: (r.events as WebhookEvent[]) ?? [],
   fieldIds: (r.field_ids as string[]) ?? [],
   condition: (r.condition as FilterNode) ?? null,
+  kind: ((r.kind as WebhookKind) ?? "generic"),
+  template: (r.template as string) ?? null,
   active: !!r.active,
   createdAt: r.created_at as string,
 });
 
 const COLUMNS =
-  "id, base_id, table_id, name, url, secret, events, field_ids, condition, active, created_at";
+  "id, base_id, table_id, name, url, secret, events, field_ids, condition, kind, template, active, created_at";
 
 // ─── The owner's side ───────────────────────────────────────────────────────
 
@@ -63,6 +66,8 @@ export async function createWebhook(
     events: WebhookEvent[];
     fieldIds?: string[];
     condition?: FilterNode | null;
+    kind?: WebhookKind;
+    template?: string | null;
   }
 ): Promise<Webhook> {
   const { data, error } = await createClient()
@@ -75,6 +80,8 @@ export async function createWebhook(
       events: input.events,
       field_ids: input.fieldIds ?? [],
       condition: input.condition ?? null,
+      kind: input.kind ?? "generic",
+      template: input.template ?? null,
     })
     .select(COLUMNS)
     .single();
@@ -90,6 +97,8 @@ export async function updateWebhook(id: string, patch: Row): Promise<Webhook> {
   if ("events" in patch) row.events = patch.events;
   if ("fieldIds" in patch) row.field_ids = patch.fieldIds;
   if ("condition" in patch) row.condition = patch.condition;
+  if ("kind" in patch) row.kind = patch.kind;
+  if ("template" in patch) row.template = patch.template;
   if ("active" in patch) row.active = patch.active;
 
   const { data, error } = await createClient()
@@ -209,13 +218,19 @@ export async function dispatchPending(
 
   const { data: hooks } = await db
     .from("webhooks")
-    .select("id, url, secret, active")
+    .select("id, url, secret, active, kind, template")
     .in("id", [...new Set(batch.map((d) => d.webhook_id))]);
 
   const byId = new Map(
     (hooks ?? []).map((h) => [
       h.id as string,
-      { url: h.url as string, secret: h.secret as string, active: !!h.active },
+      {
+        url: h.url as string,
+        secret: h.secret as string,
+        active: !!h.active,
+        kind: ((h.kind as WebhookKind) ?? "generic"),
+        template: (h.template as string) ?? null,
+      },
     ])
   );
 
@@ -240,7 +255,11 @@ export async function dispatchPending(
         return settle({ status: "dead", error: "webhook is inactive or deleted" });
       }
 
-      const body = JSON.stringify(d.payload);
+      // The body depends on the target: a generic webhook gets Swamp's signed
+      // envelope; Slack and Discord get their own tiny shape, built from the same
+      // payload. The signature is computed over whatever actually goes on the
+      // wire, so a generic receiver can still verify it.
+      const body = buildDeliveryBody(hook.kind, hook.template, d.payload);
       const timestamp = Math.floor(Date.now() / 1000).toString();
 
       try {

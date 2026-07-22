@@ -17,6 +17,9 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": root,
+      // `server-only` is a Next build-time guard with no runtime; alias it to an
+      // empty module so the pure exports of server-only files can be unit-tested.
+      "server-only": path.join(root, "tests/stubs/server-only.ts"),
     },
   },
 });

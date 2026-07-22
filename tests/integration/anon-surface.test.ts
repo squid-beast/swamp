@@ -65,6 +65,12 @@ const ALLOWED = new Set([
   // Liveness probe. Takes nothing, touches nothing, returns 'ok'. A health check you
   // need credentials for is useless in the incident where you need it.
   "swamp_health",
+  // Rate limiter for the public ingress. The form-submit and token-API routes run
+  // on the anon client, so anon must reach it. It only counts against an opaque,
+  // app-hashed bucket key and returns a boolean — it exposes and mutates no
+  // product data, and cannot lower anyone else's limit without the exact hashed
+  // key. See 20260717010000_leadgen_platform.sql.
+  "swamp_rate_limit",
 ]);
 
 let db: Client;

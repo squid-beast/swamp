@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { createClient } from "@/shared/supabase/client";
-import type { Record_ } from "./types";
+import { PALETTE_HEX, type Record_ } from "./types";
 
 // ════════════════════════════════════════════════════════════════════════════
 // Realtime: someone else's edit appears without a refresh.
@@ -27,11 +27,30 @@ import type { Record_ } from "./types";
 // WE just wrote, and skip the next event for each. A write we made is a write we
 // already applied.
 //
-// ── What is NOT here ──
+// ── Presence ──
 //
-// Presence (who else is looking at this table) and per-cell cursors. Presence is
-// cheap to add later; per-cell cursors are a different product.
+// The same channel also carries PRESENCE: who else has this table open. It rides
+// on the socket we already authenticated and opened for postgres_changes, so it
+// costs no extra connection — each tab `track()`s a tiny {userId, label} payload
+// and everyone gets a `sync` when the roster changes. Per-cell cursors are a
+// different, heavier product; this is just the avatars.
 // ════════════════════════════════════════════════════════════════════════════
+
+/** Someone else with this table open right now. */
+export interface PresenceUser {
+  userId: string;
+  label: string;
+  color: string;
+}
+
+// A stable colour per person, so the same collaborator is the same colour for
+// everyone looking. Hash the id into the shared option palette.
+const PRESENCE_COLORS = Object.values(PALETTE_HEX);
+function colorFor(id: string): string {
+  let h = 0;
+  for (let i = 0; i < id.length; i += 1) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+  return PRESENCE_COLORS[h % PRESENCE_COLORS.length];
+}
 
 interface Options {
   tableId: string;
@@ -51,6 +70,8 @@ export function useRealtime({
   onReload,
   enabled = true,
 }: Options) {
+  // Everyone else with this table open. Excludes this tab's own user.
+  const [presence, setPresence] = React.useState<PresenceUser[]>([]);
   // Records this tab wrote, and whose echo we should therefore ignore. A Set, not
   // a boolean flag: several writes can be in flight at once.
   const mine = React.useRef(new Set<string>());
@@ -90,8 +111,31 @@ export function useRealtime({
       if (token) supabase.realtime.setAuth(token);
       if (cancelled) return;
 
+      const me = data.session?.user;
+      const myId = me?.id ?? "";
+      const myLabel = me?.email ?? "Someone";
+
+      // Recompute the roster on every sync. Presence state is keyed by user id, so
+      // two tabs from the same person collapse to one chip; we drop ourselves so the
+      // bar reads "who ELSE is here".
+      const syncPresence = () => {
+        if (!channel) return;
+        const state = channel.presenceState() as Record<
+          string,
+          { userId?: string; label?: string }[]
+        >;
+        const others: PresenceUser[] = [];
+        for (const [key, metas] of Object.entries(state)) {
+          const userId = metas[0]?.userId ?? key;
+          if (userId === myId) continue;
+          others.push({ userId, label: metas[0]?.label ?? "Someone", color: colorFor(userId) });
+        }
+        setPresence(others);
+      };
+
       channel = supabase
-        .channel(`records:${tableId}`)
+        .channel(`records:${tableId}`, { config: { presence: { key: myId } } })
+        .on("presence", { event: "sync" }, syncPresence)
         .on(
           "postgres_changes",
           {
@@ -145,7 +189,14 @@ export function useRealtime({
           });
           }
         )
-        .subscribe();
+        .subscribe((status) => {
+          // Announce ourselves only once the socket is actually up — a track() before
+          // SUBSCRIBED is dropped, and the roster would then be missing whoever
+          // joined first.
+          if (status === "SUBSCRIBED" && myId) {
+            void channel?.track({ userId: myId, label: myLabel });
+          }
+        });
     })();
 
     // A token refresh (~hourly) issues a new JWT. Without re-arming the socket the
@@ -162,5 +213,5 @@ export function useRealtime({
     };
   }, [tableId, enabled]);
 
-  return { claim };
+  return { claim, presence };
 }

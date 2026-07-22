@@ -6,7 +6,7 @@
 //                                record ←→ record  (link)
 //
 // This replaces features/datasets/types.ts, which modelled a flat `Dataset` with
-// its fields and views stored as JSONB blobs on the same row. See docs/SPEC.md.
+// its fields and views stored as JSONB blobs on the same row.
 // ════════════════════════════════════════════════════════════════════════════
 
 // ─── Field types ────────────────────────────────────────────────────────────
@@ -99,6 +99,9 @@ export const FIELD_TYPES = [
   "button",
   "barcode",
   "qr",
+  // Stored in record.data like a scalar, but assigned by the database and never
+  // writable — a durable, gap-free sequence. See 20260718000000_auto_number.sql.
+  "autoNumber",
   ...AUTO_FIELD_TYPES,
 ] as const;
 
@@ -110,6 +113,10 @@ const READ_ONLY = new Set<FieldType>([
   "button",
   "barcode",
   "qr",
+  // The database assigns it and freezes it. A client write is dropped on every
+  // path (repo.ts, rest.ts, use-grid.ts all gate on isReadOnlyField), and the
+  // trigger would ignore it anyway.
+  "autoNumber",
 ]);
 
 /** A field whose value the user may never write directly. */
@@ -129,6 +136,9 @@ const NUMERIC = new Set<FieldType>([
   "rating",
   "year",
   "duration",
+  // Kept in step with swamp_is_numeric_type: an autoNumber sorts and filters as
+  // the integer it is, not as text (where "10" would sort before "9").
+  "autoNumber",
 ]);
 const TEMPORAL = new Set<FieldType>(["date", "datetime"]);
 
@@ -237,6 +247,30 @@ export interface FieldOptions {
   action?: "url" | "webhook";
   label?: string;
   webhookId?: string;
+
+  // autoNumber — presentation only. The stored value is always the bare integer.
+  //   prefix  — printed before the number: "LEAD-" → "LEAD-0007".
+  //   padding — zero-pad the number to at least this many digits (1043 stays 1043
+  //             at padding 4; 7 becomes 0007).
+  prefix?: string;
+  padding?: number;
+}
+
+/** Render an autoNumber's stored integer the way its options ask: an optional
+ *  prefix and zero-padding. Pure and side-effect-free so it can be unit-tested
+ *  and reused by the grid cell, the expanded record, and the form runtime alike. */
+export function formatAutoNumber(
+  value: unknown,
+  options: Pick<FieldOptions, "prefix" | "padding"> = {}
+): string {
+  if (value == null || value === "") return "";
+  const n = Number(value);
+  if (!Number.isFinite(n)) return String(value);
+
+  const digits = Math.max(0, Math.min(20, Math.floor(options.padding ?? 0)));
+  const body = Math.trunc(Math.abs(n)).toString().padStart(digits, "0");
+  const sign = n < 0 ? "-" : "";
+  return `${options.prefix ?? ""}${sign}${body}`;
 }
 
 export interface Field {
@@ -276,6 +310,8 @@ export type ViewLock = "collaborative" | "locked" | "personal";
 
 export interface ViewConfig {
   rowHeight?: "short" | "medium" | "tall" | "extra"; // grid
+  /** Colour each row by a single-select/status field's option colour. Grid only. */
+  colorFieldId?: string;
   coverFieldId?: string; // gallery | kanban
   stackFieldId?: string; // kanban
   stacks?: { id: string; title: string; order: number; collapsed: boolean }[];
@@ -320,6 +356,47 @@ export interface FormFieldConfig {
   /** Offer a subset of the field's real options. */
   limitedOptions?: string[];
 }
+
+/** A view's saved configuration, resolved for the client: which fields, which
+ *  filters, which sorts. The authoritative shape — do not re-declare it. */
+export interface ViewConfigData {
+  viewFields: ViewField[];
+  filter: FilterNode | null;
+  sorts: SortSpec[];
+}
+
+// ─── Colour palette ───────────────────────────────────────────────────────────
+//
+// One palette, named eight ways, in one place. Select/status options store a NAME
+// ("amber"); the pill renderer maps the name to Tailwind classes (cell.tsx SWATCH),
+// and everything that needs a real colour value — the row-colour stripe, presence
+// avatars — maps the name to a hex here. Before this lived in three files with the
+// same eight hexes copy-pasted, so a palette change was a three-file change nobody
+// remembered to finish.
+
+/** The option colour names, in swatch order. */
+export const OPTION_PALETTE = [
+  "amber",
+  "violet",
+  "teal",
+  "rose",
+  "sky",
+  "lime",
+  "orange",
+  "fuchsia",
+] as const;
+
+/** Option colour name → hex, for anywhere that needs a real colour value. */
+export const PALETTE_HEX: Record<string, string> = {
+  amber: "#f59e0b",
+  violet: "#8b5cf6",
+  teal: "#14b8a6",
+  rose: "#f43f5e",
+  sky: "#0ea5e9",
+  lime: "#84cc16",
+  orange: "#f97316",
+  fuchsia: "#d946ef",
+};
 
 export function canEditViewConfig(
   role: Role | null | undefined,
@@ -382,6 +459,10 @@ export interface ApiToken {
   /** The first few characters. The rest exists nowhere after it is minted. */
   prefix: string;
   scopes: TokenScope[];
+  /** Tables the token may touch. Empty means every table in the base — the
+   *  default, and how every token behaved before per-table pinning existed. A
+   *  non-empty list contains a lead-ingest key to exactly the tables it needs. */
+  tableIds: string[];
   expiresAt: string | null;
   lastUsedAt: string | null;
   revokedAt: string | null;
@@ -398,6 +479,17 @@ export const WEBHOOK_EVENTS = [
 
 export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
 
+/** The shape a webhook's target speaks.
+ *
+ *   generic — Swamp's own signed JSON envelope. The default; unchanged forever.
+ *   slack   — a Slack incoming webhook: { text }.
+ *   discord — a Discord incoming webhook: { content }.
+ *
+ * The dispatcher formats the body per kind (features/tables/webhook-format.ts). */
+export const WEBHOOK_KINDS = ["generic", "slack", "discord"] as const;
+
+export type WebhookKind = (typeof WEBHOOK_KINDS)[number];
+
 export interface Webhook {
   id: string;
   baseId: string;
@@ -411,6 +503,11 @@ export interface Webhook {
   fieldIds: string[];
   /** Fire only when the record matches — the same filter tree a view uses. */
   condition: FilterNode | null;
+  /** Which body shape to send. Slack/Discord get their native shape; generic gets
+   *  Swamp's signed envelope. */
+  kind: WebhookKind;
+  /** Optional {{placeholder}} message for slack/discord. Null = a built default. */
+  template: string | null;
   active: boolean;
   createdAt: string;
 }

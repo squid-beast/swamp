@@ -3,13 +3,6 @@ import { createClient } from "@/shared/supabase/server";
 
 // Is it up? One curl, one answer.
 //
-// This route exists because of a documentation failure, not a code one. For months
-// docs/SWAMP-IMPLEMENTATION-STATUS.md §6 asserted the deployment was 503ing on missing
-// env vars. It was not — the site served 200 the whole time — but there was no way to
-// check in less than a Vercel dashboard session, so the guess stood in for the fact and
-// got repeated. A wrong answer that is cheap to check dies quickly. A wrong answer that
-// is expensive to check becomes documentation.
-//
 //   curl -sS https://www.swampy.app/api/health
 //
 // 200 = env present and the database answered. 503 = `checks` says which half failed.

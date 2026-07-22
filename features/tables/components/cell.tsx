@@ -10,7 +10,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/shared/ui/dropdown-menu";
-import { isReadOnlyField, type Field } from "../types";
+import { formatAutoNumber, isReadOnlyField, type Field } from "../types";
 import { LinkCell } from "./link-cell";
 import { AttachmentCell } from "./attachment-cell";
 import { ButtonCell } from "./button-cell";
@@ -139,6 +139,15 @@ export function CellView({
   }
 
   switch (field.type) {
+    case "longText":
+      return (
+        <LongTextCell
+          value={value}
+          onChange={onChange}
+          editing={editing}
+          onEditingChange={onEditingChange}
+        />
+      );
     case "boolean":
       return <BooleanCell value={value} onChange={onChange} />;
     case "rating":
@@ -273,6 +282,85 @@ function formatDisplay(field: Field, value: unknown): string {
   }
 
   return s;
+}
+
+// ─── Long text ──────────────────────────────────────────────────────────────
+//
+// The one text-shaped type that isn't a single line. Two things make it different
+// from TextCell:
+//
+//   1. Enter inserts a newline — long text is prose. ⌘/Ctrl+Enter commits, the
+//      way every multi-line editor everywhere does it.
+//   2. It is SELF-MANAGED when the parent doesn't drive editing. The grid passes
+//      `onEditingChange` and opens the editor on double-click/type; the expanded
+//      record passes neither, so there a click opens the textarea in place —
+//      otherwise long text would be read-only in the one place you go to read it.
+
+function LongTextCell({ value, onChange, editing, onEditingChange }: Omit<CellProps, "field">) {
+  const selfManaged = onEditingChange === undefined;
+  const [focused, setFocused] = React.useState(false);
+  const open = !!editing || (selfManaged && focused);
+
+  const [draft, setDraft] = React.useState(str(value));
+  React.useEffect(() => {
+    if (!open) setDraft(str(value));
+  }, [value, open]);
+
+  const commit = () => {
+    setFocused(false);
+    onEditingChange?.(false);
+    if (draft !== str(value)) onChange(draft === "" ? null : draft);
+  };
+
+  if (!open) {
+    return (
+      <span
+        onClick={() => selfManaged && setFocused(true)}
+        className={cn(
+          "block h-full w-full overflow-hidden whitespace-pre-wrap break-words text-left text-[13px] leading-snug",
+          selfManaged && "cursor-text"
+        )}
+        title={str(value)}
+      >
+        {str(value) || <span className="text-muted-foreground/40">—</span>}
+      </span>
+    );
+  }
+
+  return (
+    <textarea
+      autoFocus
+      value={draft}
+      onFocus={(e) => {
+        // Put the caret at the end rather than selecting all — long text is
+        // appended to far more often than it is replaced wholesale.
+        const el = e.currentTarget;
+        el.setSelectionRange(el.value.length, el.value.length);
+      }}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        e.stopPropagation(); // the grid's keydown must not also see this
+        if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+          e.preventDefault();
+          commit();
+        }
+        if (e.key === "Escape") {
+          e.preventDefault();
+          setDraft(str(value));
+          setFocused(false);
+          onEditingChange?.(false);
+        }
+      }}
+      rows={selfManaged ? 4 : undefined}
+      className={cn(
+        "z-30 w-full resize-none rounded-sm bg-background text-[13px] leading-snug outline-none",
+        selfManaged
+          ? "min-h-[80px] p-0"
+          : "absolute inset-0 min-h-[88px] border border-brand p-1.5 shadow-md"
+      )}
+    />
+  );
 }
 
 // ─── Boolean ────────────────────────────────────────────────────────────────
@@ -495,6 +583,16 @@ function ReadOnly({ field, value }: { field: Field; value: unknown }) {
 
   if (value == null || value === "") {
     return <Minus className="size-3.5 text-muted-foreground/30" />;
+  }
+
+  // autoNumber stores the bare integer; the prefix and zero-padding are applied
+  // here, on the way to the screen, never on disk.
+  if (field.type === "autoNumber") {
+    return (
+      <span className="block truncate text-[13px] tabular-nums text-muted-foreground">
+        {formatAutoNumber(value, field.options)}
+      </span>
+    );
   }
 
   // createdTime/modifiedTime arrive as the raw timestamptz the database stamped

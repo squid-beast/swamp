@@ -13,7 +13,7 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/shared/ui/context-menu";
-import { isReadOnlyField, type Field, type Record_ } from "../types";
+import { isReadOnlyField, PALETTE_HEX, type Field, type Record_ } from "../types";
 import { inRange, type CellRef, type Range as CellRange } from "../use-grid";
 import { CellView } from "./cell";
 
@@ -101,6 +101,20 @@ function GroupHeader({
 const ROW_HEIGHTS = { short: 36, medium: 56, tall: 88, extra: 128 } as const;
 export type RowHeight = keyof typeof ROW_HEIGHTS;
 
+/** The picker labels, derived from the same keys as the pixel map so a new height
+ *  can never be a height with no label (or a label with no height). */
+export const ROW_HEIGHT_LABELS: Record<RowHeight, string> = {
+  short: "Short",
+  medium: "Medium",
+  tall: "Tall",
+  extra: "Extra tall",
+};
+
+// A select/status option's colour maps to a hex for the row stripe. The single
+// palette lives in types.ts (PALETTE_HEX) so the stripe, the pills and the presence
+// avatars can never drift apart.
+const TINT_HEX = PALETTE_HEX;
+
 const GROUP_HEADER_PX = 32;
 const GUTTER_WIDTH = 56;
 const DEFAULT_COL_WIDTH = 180;
@@ -153,6 +167,10 @@ export interface GridProps {
   onCommitFill: (target: CellRange) => void;
   onDeleteRecords: (ids: string[]) => void;
   onMoveRecord: (from: number, to: number) => void;
+
+  /** A row's colour, as a palette name (see TINT_HEX). Undefined/null = no tint.
+   *  Resolved by the workspace from the view's colour field. */
+  rowColor?: (record: Record_) => string | null | undefined;
 }
 
 export function Grid(props: GridProps) {
@@ -187,6 +205,7 @@ export function Grid(props: GridProps) {
     onDeleteRecords,
     onMoveRecord,
     groups,
+    rowColor,
   } = props;
 
   const scrollRef = React.useRef<HTMLDivElement>(null);
@@ -429,6 +448,12 @@ export function Grid(props: GridProps) {
             const isSelected = selected.has(record.id);
             const isDropTarget = dropRow === rowIndex;
 
+            // The colour stripe rides in an inset box-shadow, not a border — a
+            // border-left would widen only the coloured rows and shove their cells
+            // out of line with the header.
+            const tint = rowColor?.(record);
+            const tintHex = tint ? TINT_HEX[tint] : undefined;
+
             return (
               <div
                 key={record.id}
@@ -444,6 +469,7 @@ export function Grid(props: GridProps) {
                   gridTemplateColumns: gridTemplate,
                   width: "max-content",
                   minWidth: "100%",
+                  ...(tintHex ? { boxShadow: `inset 4px 0 0 0 ${tintHex}` } : {}),
                 }}
                 onDragOver={(e) => {
                   if (dragRow === null) return;

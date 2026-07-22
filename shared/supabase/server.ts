@@ -27,6 +27,13 @@ export function createClient() {
   });
 }
 
+// Shorthand for the five data-access modules that open a fresh cookie-bound client
+// per call. They each used to declare their own identical `function db()`; this is
+// that one function, in one place.
+export function db() {
+  return createClient();
+}
+
 // Returns the signed-in user's id, or null. The single place routes get identity.
 export async function getUserId(): Promise<string | null> {
   const supabase = createClient();

@@ -1,5 +1,5 @@
 import "server-only";
-import { createClient } from "@/shared/supabase/server";
+import { db } from "@/shared/supabase/server";
 import type { Role } from "./types";
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -7,10 +7,6 @@ import type { Role } from "./types";
 // ════════════════════════════════════════════════════════════════════════════
 
 type Row = Record<string, unknown>;
-
-function db() {
-  return createClient();
-}
 
 /**
  * Resolve user ids to display names.

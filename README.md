@@ -84,4 +84,4 @@ Built in the open by [Squid-Beast](https://github.com/squid-beast).
 
 ---
 
-<sub>**For developers:** running or deploying SWAMP yourself is documented under [`docs/`](./docs) — start with [DEPLOYMENT-GUIDE.md](./docs/DEPLOYMENT-GUIDE.md) and [ENVIRONMENTS.md](./docs/ENVIRONMENTS.md). The architecture and product spec live in [ARCHITECTURE.md](./ARCHITECTURE.md) and [docs/SPEC.md](./docs/SPEC.md).</sub>
+<sub>**For developers:** product usage → [`docs/GUIDE.md`](./docs/GUIDE.md). Vercel / demo deploy checklist → [`docs/DEPLOY.md`](./docs/DEPLOY.md).</sub>

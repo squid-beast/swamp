@@ -1,7 +1,8 @@
 import "server-only";
-import { createClient } from "@/shared/supabase/server";
+import { db } from "@/shared/supabase/server";
 import { deriveFieldKey } from "./field-key";
 import { fail, listFields } from "./repo";
+import { loadViewConfig, saveFilterTree, saveSorts, saveViewFields } from "./view-config";
 import type { Field, FieldOptions, FieldType, View, ViewType } from "./types";
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -19,10 +20,6 @@ import type { Field, FieldOptions, FieldType, View, ViewType } from "./types";
 // views, creators change schema. It's enforced in the database, so nothing here
 // needs to check it — a call from an editor simply fails.
 // ════════════════════════════════════════════════════════════════════════════
-
-function db() {
-  return createClient();
-}
 
 // ─── Fields ─────────────────────────────────────────────────────────────────
 
@@ -177,6 +174,53 @@ export async function createView(
 
   if (error) throw new Error(`createView: ${error.message}`);
   return toView(data);
+}
+
+/**
+ * Duplicate a view — this time with everything.
+ *
+ * The old client-side duplicate copied `config` and lost the filters, sorts and
+ * field visibility, because those live in their own tables (filters, sorts,
+ * view_fields) rather than in the view row. This copies all three, and it does it
+ * by round-tripping through the SAME load/save helpers the config editor uses:
+ * loadViewConfig reads the tree keyed by field KEY, and saveFilterTree/saveSorts
+ * write it back against the same table's fields — so nothing has to remap ids by
+ * hand, and the copy is exactly what a re-save of the original would produce.
+ */
+export async function duplicateView(viewId: string): Promise<View> {
+  const { data: src, error } = await db().from("views").select("*").eq("id", viewId).single();
+  if (error || !src) throw new Error("duplicateView: the view no longer exists");
+
+  const source = toView(src);
+  const config = await loadViewConfig(viewId, source.tableId);
+
+  const copy = await createView(source.tableId, source.baseId, {
+    name: `${source.name} copy`,
+    type: source.type,
+    config: source.config,
+  });
+
+  await Promise.all([
+    saveFilterTree(copy.id, source.baseId, source.tableId, config.filter),
+    saveSorts(copy.id, source.baseId, source.tableId, config.sorts),
+    saveViewFields(
+      copy.id,
+      source.baseId,
+      config.viewFields.map((vf) => ({
+        fieldId: vf.fieldId,
+        show: vf.show,
+        sortOrder: vf.sortOrder,
+        ...(vf.width != null ? { width: vf.width } : {}),
+        groupBy: vf.groupBy,
+        groupByOrder: vf.groupByOrder,
+        groupByDir: vf.groupByDir,
+        aggregation: vf.aggregation,
+        formConfig: vf.formConfig,
+      }))
+    ),
+  ]);
+
+  return copy;
 }
 
 export async function updateView(

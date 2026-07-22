@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { BARCODE_FORMATS, FIELD_TYPES, TOKEN_SCOPES, WEBHOOK_EVENTS } from "./types";
+import { BARCODE_FORMATS, FIELD_TYPES, TOKEN_SCOPES, WEBHOOK_EVENTS, WEBHOOK_KINDS } from "./types";
 
 // ════════════════════════════════════════════════════════════════════════════
 // Wire schemas. Everything a client can send, validated before it reaches the
@@ -57,6 +57,10 @@ export const fieldOptionsSchema = z
     action: z.enum(["url", "webhook"]),
     label: z.string().max(60),
     webhookId: z.string().uuid(),
+
+    // autoNumber — display only; the value itself is assigned by the database.
+    prefix: z.string().max(20),
+    padding: z.number().int().min(0).max(20),
   })
   .partial();
 
@@ -263,6 +267,10 @@ export const createTokenSchema = z
     /** Optional, and it should not be. A token with no expiry is a credential
      *  that outlives the reason it was created. The UI defaults to 90 days. */
     expiresAt: z.string().datetime().nullish(),
+    /** Empty (or absent) = every table in the base. A non-empty list pins the
+     *  token to those tables. The database re-validates that each id is in the
+     *  base, so this is a nicety, not the boundary. */
+    tableIds: z.array(z.string().uuid()).max(200).optional(),
   })
   .strict();
 
@@ -287,6 +295,8 @@ export const createWebhookSchema = z
     events: z.array(z.enum(WEBHOOK_EVENTS)).min(1),
     fieldIds: z.array(z.string().uuid()).max(50).optional(),
     condition: boundedFilterSchema.nullish(),
+    kind: z.enum(WEBHOOK_KINDS).optional(),
+    template: z.string().max(4000).nullish(),
   })
   .strict();
 
@@ -297,6 +307,8 @@ export const updateWebhookSchema = z
     events: z.array(z.enum(WEBHOOK_EVENTS)).min(1),
     fieldIds: z.array(z.string().uuid()).max(50),
     condition: boundedFilterSchema.nullable(),
+    kind: z.enum(WEBHOOK_KINDS),
+    template: z.string().max(4000).nullable(),
     active: z.boolean(),
   })
   .partial()

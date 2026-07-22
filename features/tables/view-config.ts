@@ -1,5 +1,5 @@
 import "server-only";
-import { createClient } from "@/shared/supabase/server";
+import { db } from "@/shared/supabase/server";
 import { listFields } from "./repo";
 import {
   isFilterGroup,
@@ -7,6 +7,7 @@ import {
   type FilterNode,
   type QuerySpec,
   type SortSpec,
+  type ViewConfigData,
   type ViewField,
 } from "./types";
 
@@ -31,15 +32,7 @@ import {
 
 type Row = Record<string, unknown>;
 
-function db() {
-  return createClient();
-}
-
-export interface ViewConfigData {
-  viewFields: ViewField[];
-  filter: FilterNode | null;
-  sorts: SortSpec[];
-}
+export type { ViewConfigData };
 
 // ─── Load ───────────────────────────────────────────────────────────────────
 

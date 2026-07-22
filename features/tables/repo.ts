@@ -1,5 +1,5 @@
 import "server-only";
-import { createClient } from "@/shared/supabase/server";
+import { db } from "@/shared/supabase/server";
 import { validateValue } from "./validate";
 import { deriveFieldKey } from "./field-key";
 import type { ValidatableField } from "./validate-types";
@@ -43,10 +43,6 @@ import {
 export { deriveFieldKey };
 
 type Row = globalThis.Record<string, unknown>;
-
-function db() {
-  return createClient();
-}
 
 /** Throw, keeping Postgres's SQLSTATE on the way up.
  *

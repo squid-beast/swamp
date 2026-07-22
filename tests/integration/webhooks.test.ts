@@ -281,6 +281,57 @@ describe("conditions", () => {
   });
 });
 
+// ─── Presets (Slack / Discord) ──────────────────────────────────────────────
+
+describe("presets", () => {
+  it("defaults to the generic kind with no template", async () => {
+    const hook = await makeWebhook();
+    const { data } = await alice.db
+      .from("webhooks")
+      .select("kind, template")
+      .eq("id", hook.id)
+      .single();
+
+    expect(data!.kind).toBe("generic");
+    expect(data!.template).toBeNull();
+  });
+
+  it("stores a slack preset with a message template", async () => {
+    const hook = await makeWebhook({
+      kind: "slack",
+      template: "New lead: {{fields.fld_name}}",
+    });
+
+    const { data } = await alice.db
+      .from("webhooks")
+      .select("kind, template")
+      .eq("id", hook.id)
+      .single();
+
+    expect(data!.kind).toBe("slack");
+    expect(data!.template).toBe("New lead: {{fields.fld_name}}");
+
+    // A preset changes only how the body is formatted at SEND time; enqueue is
+    // untouched, so a slack webhook still queues a delivery like any other.
+    await addRecord({ fld_name: "Acme" });
+    const events = await deliveriesFor(hook.id);
+    expect(events.map((e) => e.event)).toContain("record.created");
+  });
+
+  it("refuses an unknown kind at the database", async () => {
+    const { error } = await alice.db.from("webhooks").insert({
+      base_id: baseId,
+      name: "bad",
+      url: URL_,
+      events: ["record.created"],
+      kind: "carrier-pigeon",
+    });
+
+    // The check constraint is the boundary — the zod enum is only the good error.
+    expect(error).not.toBeNull();
+  });
+});
+
 // ─── Who may do what ────────────────────────────────────────────────────────
 
 describe("permissions", () => {

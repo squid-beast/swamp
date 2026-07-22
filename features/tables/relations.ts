@@ -1,5 +1,5 @@
 import "server-only";
-import { createClient } from "@/shared/supabase/server";
+import { db } from "@/shared/supabase/server";
 import { deriveFieldKey } from "./field-key";
 import { listFields } from "./repo";
 import { formulaDependencies, parseFormula, type Node } from "./formula/parser";
@@ -8,10 +8,6 @@ import type { Field, FieldOptions } from "./types";
 // ════════════════════════════════════════════════════════════════════════════
 // Relational fields: link, lookup, rollup, formula, count.
 // ════════════════════════════════════════════════════════════════════════════
-
-function db() {
-  return createClient();
-}
 
 /**
  * Create a link field — and its MIRROR on the other table.

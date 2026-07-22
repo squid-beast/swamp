@@ -21,10 +21,18 @@ export default async function ApiPage({ params }: { params: { baseId: string } }
 
   if (!base) notFound();
 
+  const { data: tables } = await supabase
+    .from("tables")
+    .select("id, name")
+    .eq("base_id", params.baseId)
+    .is("deleted_at", null)
+    .order("sort_order", { ascending: true });
+
   return (
     <TokensPanel
       baseId={base.id}
       baseName={base.name}
+      tables={(tables ?? []) as { id: string; name: string }[]}
       tokens={await listTokens(params.baseId)}
     />
   );

@@ -8,6 +8,8 @@ import {
   InvalidValues,
 } from "@/features/tables/rest";
 import { restRecordSchema } from "@/features/tables/schema";
+import { preflight, withCors } from "@/features/tables/cors";
+import { rateLimit, tooMany, V1_WRITE_LIMIT, WINDOW_SECONDS } from "@/features/tables/rate-limit";
 
 // ── /api/v1/tables/:tableId/records/:recordId ──
 //
@@ -18,33 +20,48 @@ export const dynamic = "force-dynamic";
 
 type Params = { params: { tableId: string; recordId: string } };
 
-function unauthenticated() {
-  return NextResponse.json(
-    { error: "Missing token. Send: Authorization: Bearer <token>" },
-    { status: 401 }
+function unauthenticated(origin: string | null) {
+  return withCors(
+    NextResponse.json(
+      { error: "Missing token. Send: Authorization: Bearer <token>" },
+      { status: 401 }
+    ),
+    origin
   );
 }
 
+async function writeAllowed(token: string): Promise<boolean> {
+  return rateLimit(`v1:write:${token}`, V1_WRITE_LIMIT, WINDOW_SECONDS);
+}
+
+export function OPTIONS(req: NextRequest) {
+  return preflight(req.headers.get("origin"));
+}
+
 export async function GET(req: NextRequest, { params }: Params) {
+  const origin = req.headers.get("origin");
   const token = bearer(req);
-  if (!token) return unauthenticated();
+  if (!token) return unauthenticated(origin);
 
   try {
-    return NextResponse.json(await apiGet(token, params.tableId, params.recordId));
+    return withCors(NextResponse.json(await apiGet(token, params.tableId, params.recordId)), origin);
   } catch (e) {
-    return apiError(e);
+    return withCors(apiError(e), origin);
   }
 }
 
 export async function PATCH(req: NextRequest, { params }: Params) {
+  const origin = req.headers.get("origin");
   const token = bearer(req);
-  if (!token) return unauthenticated();
+  if (!token) return unauthenticated(origin);
+
+  if (!(await writeAllowed(token))) return withCors(tooMany(WINDOW_SECONDS), origin);
 
   const parsed = restRecordSchema.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: "invalid body", issues: parsed.error.issues },
-      { status: 400 }
+    return withCors(
+      NextResponse.json({ error: "invalid body", issues: parsed.error.issues }, { status: 400 }),
+      origin
     );
   }
 
@@ -54,27 +71,37 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     ]);
 
     // The patch touched nothing: the id isn't in this table, or it's deleted.
-    if (!record) return NextResponse.json({ error: "no such record" }, { status: 404 });
+    if (!record) {
+      return withCors(NextResponse.json({ error: "no such record" }, { status: 404 }), origin);
+    }
 
-    return NextResponse.json(record);
+    return withCors(NextResponse.json(record), origin);
   } catch (e) {
     if (e instanceof InvalidValues) {
-      return NextResponse.json({ error: "invalid values", errors: e.errors }, { status: 400 });
+      return withCors(
+        NextResponse.json({ error: "invalid values", errors: e.errors }, { status: 400 }),
+        origin
+      );
     }
-    return apiError(e);
+    return withCors(apiError(e), origin);
   }
 }
 
 export async function DELETE(req: NextRequest, { params }: Params) {
+  const origin = req.headers.get("origin");
   const token = bearer(req);
-  if (!token) return unauthenticated();
+  if (!token) return unauthenticated(origin);
+
+  if (!(await writeAllowed(token))) return withCors(tooMany(WINDOW_SECONDS), origin);
 
   try {
     const deleted = await apiDelete(token, params.tableId, [params.recordId]);
-    if (!deleted) return NextResponse.json({ error: "no such record" }, { status: 404 });
+    if (!deleted) {
+      return withCors(NextResponse.json({ error: "no such record" }, { status: 404 }), origin);
+    }
 
-    return NextResponse.json({ id: params.recordId, deleted: true });
+    return withCors(NextResponse.json({ id: params.recordId, deleted: true }), origin);
   } catch (e) {
-    return apiError(e);
+    return withCors(apiError(e), origin);
   }
 }

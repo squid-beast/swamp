@@ -10,6 +10,7 @@ import {
   Group as GroupIcon,
   GripVertical,
   Lock,
+  Palette,
   Plus,
   Rows3,
   Search,
@@ -29,6 +30,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/shared/ui/select";
+import { Avatar, AvatarFallback } from "@/shared/ui/avatar";
+import { initialsFromLabel } from "@/shared/lib/format";
 import { cn } from "@/shared/lib/utils";
 import {
   isFilterGroup,
@@ -37,7 +40,11 @@ import {
   type SortSpec,
   type View,
 } from "../types";
+import type { PresenceUser } from "../use-realtime";
+import { ROW_HEIGHT_LABELS, type RowHeight } from "./grid";
 import { FilterBuilder } from "./filter-builder";
+
+export type { RowHeight };
 
 // The toolbar. Every control writes straight through to the view.
 //
@@ -52,8 +59,6 @@ function countLeaves(node: FilterNode | null): number {
   if (!isFilterGroup(node)) return 1;
   return node.children.reduce((n, c) => n + countLeaves(c), 0);
 }
-
-export type RowHeight = "short" | "medium" | "tall" | "extra";
 
 export interface ToolbarProps {
   fields: Field[];
@@ -81,6 +86,13 @@ export interface ToolbarProps {
   rowHeight: RowHeight;
   onRowHeightChange: (h: RowHeight) => void;
 
+  /** The single-select/status field whose option colours tint each row. null = off. */
+  colorFieldId: string | null;
+  onColorFieldChange: (fieldId: string | null) => void;
+
+  /** Everyone else with this table open right now. */
+  presence?: PresenceUser[];
+
   search: string;
   onSearchChange: (s: string) => void;
 
@@ -91,12 +103,9 @@ export interface ToolbarProps {
   undo?: React.ReactNode;
 }
 
-const ROW_HEIGHTS: { value: RowHeight; label: string }[] = [
-  { value: "short", label: "Short" },
-  { value: "medium", label: "Medium" },
-  { value: "tall", label: "Tall" },
-  { value: "extra", label: "Extra tall" },
-];
+const ROW_HEIGHTS = (Object.entries(ROW_HEIGHT_LABELS) as [RowHeight, string][]).map(
+  ([value, label]) => ({ value, label })
+);
 
 export function Toolbar(props: ToolbarProps) {
   const {
@@ -115,6 +124,9 @@ export function Toolbar(props: ToolbarProps) {
     onGroupByChange,
     rowHeight,
     onRowHeightChange,
+    colorFieldId,
+    onColorFieldChange,
+    presence,
     search,
     onSearchChange,
     canEditConfig,
@@ -146,6 +158,16 @@ export function Toolbar(props: ToolbarProps) {
       ),
     [fields]
   );
+
+  /** Rows can be tinted by a select/status field's own option colours. Only those
+   *  two types carry a colour per value, so only they can drive it. */
+  const colorable = React.useMemo(
+    () => fields.filter((f) => f.type === "singleSelect" || f.type === "status"),
+    [fields]
+  );
+  const colorFieldName = colorFieldId
+    ? fields.find((f) => f.id === colorFieldId)?.name
+    : null;
 
   /** The field being dragged in the Fields list, if any. */
   const [dragging, setDragging] = React.useState<string | null>(null);
@@ -450,6 +472,63 @@ export function Toolbar(props: ToolbarProps) {
         </PopoverContent>
       </Popover>
 
+      {/* Colour */}
+      <Popover>
+        <PopoverTrigger asChild>
+          <Button variant="ghost" size="sm" className="h-8 gap-1.5 text-[13px]">
+            <Palette className="size-3.5" />
+            Colour
+            {colorFieldName && (
+              <span className="max-w-24 truncate rounded bg-muted px-1 text-[11px]">
+                {colorFieldName}
+              </span>
+            )}
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent align="start" className="w-64 p-2">
+          <div className="flex items-center justify-between px-1 pb-1.5">
+            <span className="text-[12px] text-muted-foreground">Colour rows by</span>
+            {colorFieldId && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-1.5 text-[11px]"
+                disabled={!canEditConfig}
+                onClick={() => onColorFieldChange(null)}
+              >
+                Clear
+              </Button>
+            )}
+          </div>
+
+          <Select
+            value={colorFieldId ?? ""}
+            onValueChange={(v) => onColorFieldChange(v || null)}
+            disabled={!canEditConfig}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Pick a field" />
+            </SelectTrigger>
+            <SelectContent>
+              {colorable.length === 0 && (
+                <p className="px-2 py-1.5 text-[12px] text-muted-foreground">
+                  Add a single-select or status field to colour by
+                </p>
+              )}
+              {colorable.map((f) => (
+                <SelectItem key={f.id} value={f.id}>
+                  {f.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <p className="px-1 pt-2 text-[11px] text-muted-foreground">
+            Each row takes the colour of its option — the same colours as the pills.
+          </p>
+        </PopoverContent>
+      </Popover>
+
       <Button
         variant="ghost"
         size="sm"
@@ -461,16 +540,43 @@ export function Toolbar(props: ToolbarProps) {
         Export
       </Button>
 
-      {/* Full width (its own row) when the toolbar is cramped; pinned right at 14rem
-          once there's room, so it never crowds the button cluster. */}
-      <div className="relative ml-auto w-full sm:w-56">
-        <Search className="absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          value={search}
-          onChange={(e) => onSearchChange(e.target.value)}
-          placeholder="Search…"
-          className="h-8 pl-7 text-[13px]"
-        />
+      {/* Right cluster: who's here, then search. Full width (its own row) when the
+          toolbar is cramped; pinned right once there's room, so it never crowds the
+          button cluster. */}
+      <div className="ml-auto flex w-full items-center gap-2 sm:w-auto">
+        {presence && presence.length > 0 && (
+          <div className="flex items-center -space-x-1.5" title="Here now">
+            {presence.slice(0, 5).map((u) => (
+              <Avatar
+                key={u.userId}
+                className="size-6 border-2 border-background"
+                title={u.label}
+              >
+                <AvatarFallback
+                  className="text-[10px] font-medium text-white"
+                  style={{ backgroundColor: u.color }}
+                >
+                  {initialsFromLabel(u.label)}
+                </AvatarFallback>
+              </Avatar>
+            ))}
+            {presence.length > 5 && (
+              <span className="pl-2.5 text-[11px] tabular-nums text-muted-foreground">
+                +{presence.length - 5}
+              </span>
+            )}
+          </div>
+        )}
+
+        <div className="relative w-full sm:w-56">
+          <Search className="absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(e) => onSearchChange(e.target.value)}
+            placeholder="Search…"
+            className="h-8 pl-7 text-[13px]"
+          />
+        </div>
       </div>
     </div>
   );

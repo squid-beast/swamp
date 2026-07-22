@@ -15,7 +15,7 @@ import type {
   SortSpec,
   Table,
   View,
-  ViewField,
+  ViewConfigData,
 } from "../types";
 import { canEditViewConfig, COMPUTED_FIELD_TYPES } from "../types";
 import { Grid, groupKeyOf } from "./grid";
@@ -33,12 +33,6 @@ import { ExpandedRecord } from "./expanded-record";
 // It does not hold the records — `spec` is the state, the spec goes to Postgres,
 // Postgres returns a page. And it does not mutate them directly: every write is a
 // Command, so every write can be undone.
-
-export interface ViewConfigData {
-  viewFields: ViewField[];
-  filter: FilterNode | null;
-  sorts: SortSpec[];
-}
 
 export function TableWorkspace({
   table,
@@ -251,7 +245,7 @@ export function TableWorkspace({
   // own write fights the optimistic update and yanks the value out from under the
   // cursor if you're still typing. That bug only appears when the round trip is
   // slower than the next keystroke, which is why it's so unpleasant to find.
-  useRealtime({
+  const { presence } = useRealtime({
     tableId: table.id,
     // MERGE `data`, don't replace it.
     //
@@ -297,6 +291,19 @@ export function TableWorkspace({
 
       setConfig((await res.json()) as ViewConfigData);
     },
+    [view.id]
+  );
+
+  // The view ROW (name, lockType, config blob) — distinct from patchConfig above,
+  // which writes the filter/sort/field tables behind /config. Four callers used to
+  // inline this exact three-line fetch.
+  const patchView = React.useCallback(
+    (body: Record<string, unknown>) =>
+      fetch(`/api/views/${view.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }),
     [view.id]
   );
 
@@ -401,13 +408,32 @@ export function TableWorkspace({
   };
 
   const setRowHeight = async (h: RowHeight) => {
-    setView((v) => ({ ...v, config: { ...v.config, rowHeight: h } }));
-    await fetch(`/api/views/${view.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ config: { ...view.config, rowHeight: h } }),
-    });
+    const config = { ...view.config, rowHeight: h };
+    setView((v) => ({ ...v, config }));
+    await patchView({ config });
   };
+
+  // Colour rows by a select/status field's option colours. Lives on the view
+  // config, saved the same way row height is.
+  const setColorField = async (fieldId: string | null) => {
+    const config = { ...view.config, colorFieldId: fieldId ?? undefined };
+    setView((v) => ({ ...v, config }));
+    await patchView({ config });
+  };
+
+  const colorField = view.config.colorFieldId
+    ? fields.find((f) => f.id === view.config.colorFieldId)
+    : null;
+
+  // Returns the palette name of the row's option, which the grid maps to a stripe.
+  const rowColor = React.useCallback(
+    (record: (typeof records)[number]) => {
+      if (!colorField) return null;
+      const value = record.data[colorField.key];
+      return colorField.options.options?.find((o) => o.value === value)?.color ?? null;
+    },
+    [colorField]
+  );
 
   const reloadFields = React.useCallback(async () => {
     const res = await fetch(`/api/tables/${table.id}/fields`);
@@ -461,12 +487,9 @@ export function TableWorkspace({
 
   const setCollapsedStacks = async (next: Set<string>) => {
     const stacks = [...next].map((id, i) => ({ id, title: id, order: i, collapsed: true }));
-    setView((v) => ({ ...v, config: { ...v.config, stacks } }));
-    await fetch(`/api/views/${view.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ config: { ...view.config, stacks } }),
-    });
+    const config = { ...view.config, stacks };
+    setView((v) => ({ ...v, config }));
+    await patchView({ config });
   };
 
   return (
@@ -483,6 +506,7 @@ export function TableWorkspace({
             fields={fields}
             canEdit={canEdit}
             onChanged={() => router.refresh()}
+            onRestored={reload}
           />
         }
         filter={config.filter}
@@ -496,6 +520,9 @@ export function TableWorkspace({
         onGroupByChange={setGroupBy}
         rowHeight={rowHeight}
         onRowHeightChange={setRowHeight}
+        colorFieldId={view.config.colorFieldId ?? null}
+        onColorFieldChange={setColorField}
+        presence={presence}
         search={search}
         onSearchChange={setSearch}
         canEditConfig={canEdit}
@@ -607,11 +634,7 @@ export function TableWorkspace({
           viewFields={config.viewFields}
           onSave={async (patch) => {
             if (patch.view) {
-              await fetch(`/api/views/${view.id}`, {
-                method: "PATCH",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(patch.view),
-              });
+              await patchView(patch.view as Record<string, unknown>);
               setView((v) => ({ ...v, ...(patch.view as Partial<View>) }));
             }
             if (patch.viewFields) await patchConfig({ viewFields: patch.viewFields });
@@ -667,6 +690,7 @@ export function TableWorkspace({
           onCommitFill={grid.commitFill}
           onDeleteRecords={grid.deleteRecords}
           onMoveRecord={grid.moveRecord}
+          rowColor={rowColor}
         />
       )}
 

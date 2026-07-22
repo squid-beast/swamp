@@ -12,10 +12,14 @@ import {
   Grid3x3,
   Images,
   Kanban as KanbanIcon,
+  CopyPlus,
+  Loader2,
   Lock,
   MoreHorizontal,
   Pencil,
   Plus,
+  RotateCcw,
+  Trash,
   Trash2,
   User,
   Users,
@@ -82,6 +86,7 @@ export function ViewMenu({
   fields,
   canEdit,
   onChanged,
+  onRestored,
 }: {
   tableId: string;
   views: View[];
@@ -89,10 +94,13 @@ export function ViewMenu({
   fields: Field[];
   canEdit: boolean;
   onChanged: () => void;
+  /** Records came back from the trash — the grid must re-query to show them. */
+  onRestored?: () => void;
 }) {
   const router = useRouter();
   const [renaming, setRenaming] = React.useState(false);
   const [sharing, setSharing] = React.useState(false);
+  const [trashing, setTrashing] = React.useState(false);
   const [name, setName] = React.useState(view.name);
 
   const go = (id: string) => router.push(`/app/t/${tableId}?view=${id}`);
@@ -141,25 +149,15 @@ export function ViewMenu({
   };
 
   const duplicate = async () => {
-    const res = await fetch(`/api/tables/${tableId}/views`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: `${view.name} copy`,
-        type: view.type,
-        config: view.config,
-      }),
-    });
+    // Server-side now, so the copy carries the filters, sorts and field visibility
+    // too — not just the view row. See /api/views/[id]/duplicate.
+    const res = await fetch(`/api/views/${view.id}/duplicate`, { method: "POST" });
 
     if (!res.ok) {
       toast.error("Could not duplicate the view");
       return;
     }
 
-    // NOTE: this copies the view's config but NOT its filters, sorts or field
-    // visibility — those live in their own tables. A real duplicate would copy them
-    // too, and it's a server-side job because it's three inserts that must all
-    // happen or none.
     const body = await res.json();
     router.refresh();
     go(body.view.id);
@@ -189,6 +187,27 @@ export function ViewMenu({
     if (!res.ok) return toast.error("Could not change the view mode");
     onChanged();
     router.refresh();
+  };
+
+  const [duplicatingTable, setDuplicatingTable] = React.useState(false);
+  const duplicateTable = async () => {
+    if (duplicatingTable) return;
+    setDuplicatingTable(true);
+
+    // The heavy lift is server-side and atomic — fields, views and every record
+    // copied in one function, or none. See /api/tables/[id]/duplicate.
+    const res = await fetch(`/api/tables/${tableId}/duplicate`, { method: "POST" });
+    setDuplicatingTable(false);
+
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      return toast.error(body?.error ?? "Could not duplicate the table");
+    }
+
+    const body = await res.json();
+    toast.success("Table duplicated");
+    router.refresh();
+    router.push(`/app/t/${body.tableId}`);
   };
 
   const remove = async () => {
@@ -286,6 +305,26 @@ export function ViewMenu({
 
           <DropdownMenuSeparator />
 
+          <DropdownMenuLabel className="text-[11px] text-muted-foreground">
+            Table
+          </DropdownMenuLabel>
+
+          <DropdownMenuItem disabled={duplicatingTable} onClick={duplicateTable}>
+            {duplicatingTable ? (
+              <Loader2 className="mr-2 size-3.5 animate-spin" />
+            ) : (
+              <CopyPlus className="mr-2 size-3.5" />
+            )}
+            Duplicate table
+          </DropdownMenuItem>
+
+          <DropdownMenuItem onClick={() => setTrashing(true)}>
+            <Trash className="mr-2 size-3.5" />
+            Trash…
+          </DropdownMenuItem>
+
+          <DropdownMenuSeparator />
+
           <DropdownMenuSub>
             <DropdownMenuSubTrigger>
               <Lock className="mr-2 size-3.5" />
@@ -350,7 +389,142 @@ export function ViewMenu({
       </Dialog>
 
       <ShareDialog open={sharing} onOpenChange={setSharing} view={view} />
+
+      <TrashDialog
+        open={trashing}
+        onOpenChange={setTrashing}
+        tableId={tableId}
+        primaryKey={fields.find((f) => f.isPrimary)?.key ?? fields[0]?.key ?? ""}
+        onRestored={onRestored}
+      />
     </div>
+  );
+}
+
+// ─── Trash ──────────────────────────────────────────────────────────────────
+//
+// Every delete in Swamp is soft, so nothing here is a resurrection — the rows
+// were only tombstoned. This lists them and flips `deleted_at` back to null via
+// the restore route, which is the exact inverse of the delete the undo stack
+// already relies on.
+
+interface TrashRecord {
+  id: string;
+  data: Record<string, unknown>;
+  deletedAt: string;
+}
+
+function TrashDialog({
+  open,
+  onOpenChange,
+  tableId,
+  primaryKey,
+  onRestored,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  tableId: string;
+  primaryKey: string;
+  onRestored?: () => void;
+}) {
+  const [records, setRecords] = React.useState<TrashRecord[]>([]);
+  const [loading, setLoading] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
+
+  const load = React.useCallback(async () => {
+    setLoading(true);
+    const res = await fetch(`/api/tables/${tableId}/trash`);
+    setLoading(false);
+    if (!res.ok) return toast.error("Could not load the trash");
+    setRecords((await res.json()).records as TrashRecord[]);
+  }, [tableId]);
+
+  React.useEffect(() => {
+    if (open) void load();
+  }, [open, load]);
+
+  const restore = async (ids: string[]) => {
+    if (!ids.length || busy) return;
+    setBusy(true);
+    const res = await fetch(`/api/tables/${tableId}/records/restore`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids }),
+    });
+    setBusy(false);
+
+    if (!res.ok) return toast.error("Could not restore");
+
+    setRecords((rs) => rs.filter((r) => !ids.includes(r.id)));
+    toast.success(ids.length === 1 ? "Record restored" : `${ids.length} records restored`);
+    onRestored?.();
+  };
+
+  const labelOf = (r: TrashRecord) => {
+    const v = r.data[primaryKey];
+    return v == null || v === "" ? "Untitled record" : String(v);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Trash</DialogTitle>
+          <DialogDescription>
+            Deleted records, most recent first. Restoring one puts it back exactly
+            where it was — nothing here was ever really removed.
+          </DialogDescription>
+        </DialogHeader>
+
+        {loading ? (
+          <div className="flex items-center justify-center py-8 text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" />
+          </div>
+        ) : records.length === 0 ? (
+          <p className="py-8 text-center text-[13px] text-muted-foreground">
+            Nothing in the trash.
+          </p>
+        ) : (
+          <div className="flex max-h-80 flex-col gap-1 overflow-auto">
+            {records.map((r) => (
+              <div
+                key={r.id}
+                className="flex items-center gap-2 rounded-md border px-2.5 py-1.5"
+              >
+                <div className="flex min-w-0 flex-col">
+                  <span className="truncate text-[13px]">{labelOf(r)}</span>
+                  <span className="text-[11px] text-muted-foreground">
+                    Deleted {new Date(r.deletedAt).toLocaleString()}
+                  </span>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="ml-auto h-7 gap-1.5 text-[12px]"
+                  disabled={busy}
+                  onClick={() => restore([r.id])}
+                >
+                  <RotateCcw className="size-3" />
+                  Restore
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {records.length > 1 && (
+          <DialogFooter>
+            <Button
+              variant="outline"
+              disabled={busy}
+              onClick={() => restore(records.map((r) => r.id))}
+            >
+              Restore all
+            </Button>
+          </DialogFooter>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
 

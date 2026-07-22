@@ -12,6 +12,7 @@ import {
   LogOut,
   MoreHorizontal,
   Pencil,
+  Plug,
   Plus,
   Search,
   Sheet,
@@ -60,6 +61,7 @@ import { SwampMark } from "@/shared/components/swamp-mark";
 import { RenameDialog } from "@/shared/components/rename-dialog";
 import { ConfirmDialog } from "@/shared/components/confirm-dialog";
 import { cn } from "@/shared/lib/utils";
+import { initialsFromName } from "@/shared/lib/format";
 import type { ShellUser } from "./app-shell";
 
 // The tree: bases → tables.
@@ -181,13 +183,7 @@ export function AppSidebar({
     router.refresh();
   };
 
-  const initials =
-    user?.name
-      ?.split(" ")
-      .map((p) => p[0])
-      .slice(0, 2)
-      .join("")
-      .toUpperCase() ?? "?";
+  const initials = initialsFromName(user?.name);
 
   return (
     <Sidebar collapsible="icon">
@@ -468,7 +464,18 @@ export function AppSidebar({
                             >
                               <Link href={`/app/b/${base.id}/automations`}>
                                 <Webhook className="size-3.5" />
-                                <span>Automations</span>
+                                <span>Workflows</span>
+                              </Link>
+                            </SidebarMenuSubButton>
+                          </SidebarMenuSubItem>
+                          <SidebarMenuSubItem>
+                            <SidebarMenuSubButton
+                              asChild
+                              isActive={pathname === `/app/b/${base.id}/integrations`}
+                            >
+                              <Link href={`/app/b/${base.id}/integrations`}>
+                                <Plug className="size-3.5" />
+                                <span>Integrations</span>
                               </Link>
                             </SidebarMenuSubButton>
                           </SidebarMenuSubItem>

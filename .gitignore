@@ -48,7 +48,10 @@ yarn-error.log*
 next-env.d.ts
 
 # local editor / AI tooling
-/.claude
+# Keep Claude Code local state private, but share project rules + CLAUDE.md.
+/.claude/*
+!/.claude/rules/
+!/.claude/rules/**
 /.cursor
 .idea/
 .vscode/
@@ -67,6 +70,6 @@ next-env.d.ts
 # Everything under docs/ and tests/ is a deliverable — do not re-ignore it.
 /*.md
 !/README.md
-!/ARCHITECTURE.md
+!/CLAUDE.md
 !docs/**
 !tests/**

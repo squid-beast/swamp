@@ -3,6 +3,7 @@
 import * as React from "react";
 import { Check, Minus } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
+import { initialsFromName } from "@/shared/lib/format";
 import { Avatar, AvatarFallback } from "@/shared/ui/avatar";
 import {
   DropdownMenu,
@@ -97,18 +98,6 @@ function idsOf(value: unknown): string[] {
   return typeof value === "string" && value ? [value] : [];
 }
 
-function initialsOf(name: string) {
-  return (
-    name
-      .split(" ")
-      .map((p) => p[0])
-      .filter(Boolean)
-      .slice(0, 2)
-      .join("")
-      .toUpperCase() || "?"
-  );
-}
-
 function Person({ entry, id }: { entry?: RosterEntry; id: string }) {
   // A uuid that isn't in the roster is a real case, not a bug: the person was
   // removed from the base, or deleted their account, and the record they touched
@@ -118,7 +107,7 @@ function Person({ entry, id }: { entry?: RosterEntry; id: string }) {
   return (
     <span className="flex min-w-0 items-center gap-1.5" title={entry?.email ?? id}>
       <Avatar className="size-4 shrink-0">
-        <AvatarFallback className="text-[8px]">{initialsOf(name)}</AvatarFallback>
+        <AvatarFallback className="text-[8px]">{initialsFromName(name)}</AvatarFallback>
       </Avatar>
       <span className="truncate text-[13px]">{name}</span>
     </span>
