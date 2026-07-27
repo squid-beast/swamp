@@ -22,7 +22,10 @@
     /* neutral primary = near-black button (ChatGPT's dark send button) */
     --primary: 0 0% 9%;
     --primary-foreground: 0 0% 98%;
-    --brand: 0 0% 9%;
+    /* brand = SWAMP's deep moss green with an electric edge. The single accent.
+       Chromatic (hue 130) and distinct from --success (158) so "brand" and
+       "it worked" never read as the same colour. */
+    --brand: 142 60% 30%;
     --brand-foreground: 0 0% 98%;
 
     --secondary: 0 0% 94%;
@@ -38,7 +41,8 @@
 
     --border: 0 0% 89%;
     --input: 0 0% 85%;
-    --ring: 0 0% 45%;
+    /* focus rings carry the brand accent */
+    --ring: 142 60% 30%;
     --radius: 0.75rem;
 
     /* chart palette (categorical — kept for readability) */
@@ -56,7 +60,7 @@
     --sidebar-accent: 0 0% 92%;
     --sidebar-accent-foreground: 0 0% 10%;
     --sidebar-border: 0 0% 90%;
-    --sidebar-ring: 0 0% 45%;
+    --sidebar-ring: 142 60% 30%;
 
     /* ── categorical status palette (select / status / kanban) — light ── */
     --c-amber-bg: #fbecc9;   --c-amber-fg: #8a5600;
@@ -81,8 +85,10 @@
     /* neutral primary = near-white button (ChatGPT's light send button) */
     --primary: 0 0% 96%;
     --primary-foreground: 0 0% 12%;
-    --brand: 0 0% 96%;
-    --brand-foreground: 0 0% 12%;
+    /* brand lifts to an electric moss on the dark canvas; near-black foreground
+       for legible text on the bright accent. */
+    --brand: 142 69% 58%;
+    --brand-foreground: 142 45% 9%;
 
     --secondary: 0 0% 18%;
     --secondary-foreground: 0 0% 92%;
@@ -97,7 +103,7 @@
 
     --border: 0 0% 24%;
     --input: 0 0% 26%;
-    --ring: 0 0% 64%;
+    --ring: 142 69% 58%;
 
     --chart-1: 39 90% 58%;
     --chart-2: 172 60% 50%;
@@ -112,7 +118,7 @@
     --sidebar-accent: 0 0% 18%;
     --sidebar-accent-foreground: 0 0% 96%;
     --sidebar-border: 0 0% 16%;
-    --sidebar-ring: 0 0% 64%;
+    --sidebar-ring: 142 69% 58%;
 
     /* ── categorical status palette — dark ── */
     --c-amber-bg: #3a2c10;   --c-amber-fg: #f2b544;
@@ -149,9 +155,9 @@
   font-feature-settings: "tnum";
 }
 
-/* ── selection + scrollbar, neutral ── */
+/* ── selection tinted with the brand accent, scrollbar neutral ── */
 ::selection {
-  background: hsl(var(--foreground) / 0.15);
+  background: hsl(var(--brand) / 0.22);
 }
 * {
   scrollbar-width: thin;

@@ -60,8 +60,8 @@ import { createClient } from "@/shared/supabase/client";
 import { SwampMark } from "@/shared/components/swamp-mark";
 import { RenameDialog } from "@/shared/components/rename-dialog";
 import { ConfirmDialog } from "@/shared/components/confirm-dialog";
-import { cn } from "@/shared/lib/utils";
 import { initialsFromName } from "@/shared/lib/format";
+import { cn } from "@/shared/lib/utils";
 import type { ShellUser } from "./app-shell";
 
 // The tree: bases → tables.
@@ -185,6 +185,12 @@ export function AppSidebar({
 
   const initials = initialsFromName(user?.name);
 
+  // One nav scale, shared by every row so the sidebar stops drifting between the
+  // primitive's 14px/16px defaults and the toolbar's 13px/14px. 13px label, 14px
+  // icon — the same scale the toolbar uses, applied here at the call site because
+  // the Sidebar primitive is shared and hard-codes text-sm / size-4.
+  const navClass = "text-[13px] [&>svg]:size-3.5";
+
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader>
@@ -210,7 +216,7 @@ export function AppSidebar({
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
-                <SidebarMenuButton onClick={onSearch} tooltip="Search">
+                <SidebarMenuButton onClick={onSearch} tooltip="Search" className={navClass}>
                   <Search />
                   <span>Search</span>
                 </SidebarMenuButton>
@@ -220,6 +226,7 @@ export function AppSidebar({
                   asChild
                   isActive={pathname === "/app/import"}
                   tooltip="Import data"
+                  className={navClass}
                 >
                   <Link href="/app/import">
                     <UploadCloud />
@@ -232,6 +239,7 @@ export function AppSidebar({
                   asChild
                   isActive={pathname === "/app/connect"}
                   tooltip="Connect a sheet"
+                  className={navClass}
                 >
                   <Link href="/app/connect">
                     <Sheet />
@@ -279,10 +287,10 @@ export function AppSidebar({
                   >
                     <SidebarMenuItem>
                       <CollapsibleTrigger asChild>
-                        <SidebarMenuButton tooltip={base.name}>
+                        <SidebarMenuButton tooltip={base.name} className={navClass}>
                           <Database />
                           <span className="truncate">{base.name}</span>
-                          <ChevronRight className="ml-auto size-3.5 transition-transform group-data-[state=open]/collapsible:rotate-90" />
+                          <ChevronRight className="ml-auto transition-transform group-data-[state=open]/collapsible:rotate-90" />
                         </SidebarMenuButton>
                       </CollapsibleTrigger>
 
@@ -334,7 +342,12 @@ export function AppSidebar({
                         </DropdownMenuContent>
                       </DropdownMenu>
 
-                      <CollapsibleContent>
+                      {/* Expand/collapse the base's tables with a subtle
+                          slide+fade. Radix keeps the content mounted through the
+                          close via its own Presence, so the exit animation lands;
+                          the width-collapse of the whole rail is handled by the
+                          Sidebar primitive's transition-[width]. */}
+                      <CollapsibleContent className="overflow-hidden data-[state=closed]:animate-out data-[state=open]:animate-in data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:slide-out-to-top-1 data-[state=open]:slide-in-from-top-1">
                         <SidebarMenuSub>
                           {base.tables.map((t) => (
                             // relative + group/menu-item: SidebarMenuSubItem is a
@@ -347,14 +360,13 @@ export function AppSidebar({
                               <SidebarMenuSubButton
                                 asChild
                                 isActive={pathname === `/app/t/${t.id}`}
+                                className={cn(
+                                  navClass,
+                                  "data-[active=true]:font-medium data-[active=true]:text-brand data-[active=true]:[&>svg]:text-brand"
+                                )}
                               >
                                 <Link href={`/app/t/${t.id}`}>
-                                  <Table2
-                                    className={cn(
-                                      "size-3.5",
-                                      pathname === `/app/t/${t.id}` && "text-brand"
-                                    )}
-                                  />
+                                  <Table2 />
                                   <span className="truncate">{t.name}</span>
                                 </Link>
                               </SidebarMenuSubButton>
@@ -422,12 +434,13 @@ export function AppSidebar({
                                 reachable by keyboard. */}
                             <SidebarMenuSubButton
                               asChild
+                              className={navClass}
                               onClick={() =>
                                 setPending({ kind: "create-table", baseId: base.id })
                               }
                             >
                               <button type="button" className="w-full">
-                                <Plus className="size-3.5" />
+                                <Plus />
                                 <span>New table</span>
                               </button>
                             </SidebarMenuSubButton>
@@ -438,10 +451,11 @@ export function AppSidebar({
                           <SidebarMenuSubItem>
                             <SidebarMenuSubButton
                               asChild
+                              className={navClass}
                               isActive={pathname === `/app/b/${base.id}/members`}
                             >
                               <Link href={`/app/b/${base.id}/members`}>
-                                <Users className="size-3.5" />
+                                <Users />
                                 <span>Members</span>
                               </Link>
                             </SidebarMenuSubButton>
@@ -449,10 +463,11 @@ export function AppSidebar({
                           <SidebarMenuSubItem>
                             <SidebarMenuSubButton
                               asChild
+                              className={navClass}
                               isActive={pathname === `/app/b/${base.id}/api`}
                             >
                               <Link href={`/app/b/${base.id}/api`}>
-                                <KeyRound className="size-3.5" />
+                                <KeyRound />
                                 <span>API tokens</span>
                               </Link>
                             </SidebarMenuSubButton>
@@ -460,10 +475,11 @@ export function AppSidebar({
                           <SidebarMenuSubItem>
                             <SidebarMenuSubButton
                               asChild
+                              className={navClass}
                               isActive={pathname === `/app/b/${base.id}/automations`}
                             >
                               <Link href={`/app/b/${base.id}/automations`}>
-                                <Webhook className="size-3.5" />
+                                <Webhook />
                                 <span>Workflows</span>
                               </Link>
                             </SidebarMenuSubButton>
@@ -471,10 +487,11 @@ export function AppSidebar({
                           <SidebarMenuSubItem>
                             <SidebarMenuSubButton
                               asChild
+                              className={navClass}
                               isActive={pathname === `/app/b/${base.id}/integrations`}
                             >
                               <Link href={`/app/b/${base.id}/integrations`}>
-                                <Plug className="size-3.5" />
+                                <Plug />
                                 <span>Integrations</span>
                               </Link>
                             </SidebarMenuSubButton>
@@ -495,7 +512,11 @@ export function AppSidebar({
           <SidebarMenuItem>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <SidebarMenuButton size="lg" tooltip={user?.name ?? "Account"}>
+                <SidebarMenuButton
+                  size="lg"
+                  tooltip={user?.name ?? "Account"}
+                  className="[&>svg]:size-3.5"
+                >
                   <Avatar className="size-7 rounded-md">
                     <AvatarImage src={user?.avatarUrl ?? undefined} />
                     <AvatarFallback className="rounded-md text-[11px]">

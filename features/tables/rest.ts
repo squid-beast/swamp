@@ -243,6 +243,44 @@ export async function apiInsert(
   return created ?? [];
 }
 
+export interface ApiUpsertResult {
+  created: number;
+  updated: number;
+  skipped: number;
+  records: ApiRecord[];
+}
+
+/**
+ * Upsert a batch keyed by one field. Same shape as apiInsert — validate here for
+ * a good error message, then hand the whole decision (match / insert / merge) to
+ * the SECURITY DEFINER function, which owns authority and correctness.
+ */
+export async function apiUpsert(
+  token: string,
+  tableId: string,
+  records: { fields: Row }[],
+  keyField: string
+): Promise<ApiUpsertResult> {
+  const fields = await fieldsOf(token, tableId);
+
+  const errors = validate(fields, records.map((r) => r.fields));
+  if (errors.length) throw new InvalidValues(errors);
+
+  const result = await rpc<ApiUpsertResult>("swamp_api_upsert", {
+    p_token: token,
+    p_table_id: tableId,
+    p_records: records,
+    p_key_field: keyField,
+  });
+
+  return {
+    created: result?.created ?? 0,
+    updated: result?.updated ?? 0,
+    skipped: result?.skipped ?? 0,
+    records: result?.records ?? [],
+  };
+}
+
 export async function apiPatch(
   token: string,
   tableId: string,

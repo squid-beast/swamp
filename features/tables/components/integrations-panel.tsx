@@ -146,6 +146,12 @@ export function IntegrationsPanel({
   -H "Content-Type: application/json" \\
   -d '{ "Full Name": "Ada Lovelace", "Email": "ada@example.com" }'`;
 
+  const ingestRetryCurl = `curl -X POST "${ingestUrl}?upsertOn=Email" \\
+  -H "Authorization: Bearer YOUR_TOKEN" \\
+  -H "Content-Type: application/json" \\
+  -H "Idempotency-Key: 6b9c1e2a-…" \\
+  -d '{ "Full Name": "Ada Lovelace", "Email": "ada@example.com" }'`;
+
   const restCurl = `curl -X POST ${origin}/api/v1/tables/${tableId}/records \\
   -H "Authorization: Bearer YOUR_TOKEN" \\
   -H "Content-Type: application/json" \\
@@ -292,6 +298,23 @@ export function IntegrationsPanel({
             <CodeBlock code={ingestCurl} />
             Success returns <C>201</C> with the created record. CORS is open, so a browser
             form can post here directly.
+          </Step>
+          <Step n={4} title="Make retries safe">
+            A retry after a timeout or <C>502</C> (Zapier and Make retry automatically) can
+            otherwise create a duplicate. Two guards, either or both:
+            <ul className="list-disc space-y-1 pl-4">
+              <li>
+                Send a unique <C>Idempotency-Key</C> header. Replay the same key and the
+                original response comes back untouched — no second record.
+              </li>
+              <li>
+                Add <C>?upsertOn=Email</C> (any column name). A record whose{" "}
+                <span className="font-medium text-foreground">Email</span> matches an existing
+                one updates it instead of inserting a duplicate; the response then also
+                includes <C>created</C> and <C>updated</C> counts.
+              </li>
+            </ul>
+            <CodeBlock code={ingestRetryCurl} />
           </Step>
         </Steps>
         <div className="mt-1 flex items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2 text-[12px] text-muted-foreground">

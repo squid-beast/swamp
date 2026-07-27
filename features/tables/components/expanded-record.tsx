@@ -2,9 +2,15 @@
 
 import * as React from "react";
 import { toast } from "sonner";
+import { motion, useReducedMotion } from "framer-motion";
 import { ChevronDown, ChevronUp, Copy, CopyPlus, Trash2, X } from "lucide-react";
 import { Button } from "@/shared/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/shared/ui/dialog";
+import {
+  ResizablePanelGroup,
+  ResizablePanel,
+  ResizableHandle,
+} from "@/shared/ui/resizable";
 import { cn } from "@/shared/lib/utils";
 import { isReadOnlyField, type Field, type Record_ } from "../types";
 import { CellView } from "./cell";
@@ -58,6 +64,7 @@ export function ExpandedRecord({
 }) {
   const record = records[index];
   const [showHidden, setShowHidden] = React.useState(false);
+  const reduceMotion = useReducedMotion();
 
   const visible = fields.filter((f) => !hidden.has(f.id));
   const collapsed = fields.filter((f) => hidden.has(f.id));
@@ -168,35 +175,24 @@ export function ExpandedRecord({
           </Button>
         </div>
 
-        <div className="flex min-h-0 flex-1">
-        <div className="min-w-0 flex-1 overflow-auto px-4 py-3">
-          <div className="flex flex-col gap-3">
-            {visible.map((f) => (
-              <FieldRow
-                key={f.id}
-                field={f}
-                value={record.data[f.key]}
-                onChange={(v) => onUpdateCell(record.id, f.key, v)}
-                recordId={record.id}
-                tableId={tableId}
-                onLinksChanged={onLinksChanged}
-              />
-            ))}
-          </div>
-
-          {collapsed.length > 0 && (
-            <div className="mt-4 border-t pt-3">
-              <button
-                onClick={() => setShowHidden((s) => !s)}
-                className="text-[13px] text-muted-foreground hover:text-foreground"
+        {/* Two panes the reader can rebalance: the fields on the left, the
+            comments/history rail on the right. The split is draggable via the
+            resizable primitive rather than a hard-coded w-80 — a record with long
+            comments and one with many fields want different balances. */}
+        <ResizablePanelGroup direction="horizontal" className="min-h-0 flex-1">
+          <ResizablePanel defaultSize={64} minSize={42} className="min-w-0">
+            <div className="h-full overflow-auto px-4 py-3">
+              {/* Record-panel presence: stepping prev/next remounts this on the
+                  record id, so the new record's fields fade+rise in rather than
+                  snapping. Reduced-motion users get the swap instantly. */}
+              <motion.div
+                key={record.id}
+                initial={reduceMotion ? false : { opacity: 0, y: 6 }}
+                animate={reduceMotion ? undefined : { opacity: 1, y: 0 }}
+                transition={{ duration: 0.16, ease: [0.22, 0.8, 0.24, 1] }}
               >
-                {showHidden ? "Hide" : "Show"} {collapsed.length} hidden{" "}
-                {collapsed.length === 1 ? "field" : "fields"}
-              </button>
-
-              {showHidden && (
-                <div className="mt-3 flex flex-col gap-3">
-                  {collapsed.map((f) => (
+                <div className="flex flex-col gap-3">
+                  {visible.map((f) => (
                     <FieldRow
                       key={f.id}
                       field={f}
@@ -208,17 +204,48 @@ export function ExpandedRecord({
                     />
                   ))}
                 </div>
-              )}
-            </div>
-          )}
-        </div>
 
-        <RecordSidebar
-          recordId={record.id}
-          fields={fields}
-          currentUserId={currentUserId}
-        />
-        </div>
+                {collapsed.length > 0 && (
+                  <div className="mt-4 border-t pt-3">
+                    <button
+                      onClick={() => setShowHidden((s) => !s)}
+                      className="text-[13px] text-muted-foreground hover:text-foreground"
+                    >
+                      {showHidden ? "Hide" : "Show"} {collapsed.length} hidden{" "}
+                      {collapsed.length === 1 ? "field" : "fields"}
+                    </button>
+
+                    {showHidden && (
+                      <div className="mt-3 flex flex-col gap-3">
+                        {collapsed.map((f) => (
+                          <FieldRow
+                            key={f.id}
+                            field={f}
+                            value={record.data[f.key]}
+                            onChange={(v) => onUpdateCell(record.id, f.key, v)}
+                            recordId={record.id}
+                            tableId={tableId}
+                            onLinksChanged={onLinksChanged}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </motion.div>
+            </div>
+          </ResizablePanel>
+
+          <ResizableHandle withHandle />
+
+          <ResizablePanel defaultSize={36} minSize={22} maxSize={55} className="min-w-0">
+            <RecordSidebar
+              recordId={record.id}
+              fields={fields}
+              currentUserId={currentUserId}
+            />
+          </ResizablePanel>
+        </ResizablePanelGroup>
       </DialogContent>
     </Dialog>
   );

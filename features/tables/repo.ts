@@ -284,6 +284,26 @@ export async function countRecords(tableId: string, spec: QuerySpec = {}): Promi
   return Number(data);
 }
 
+/**
+ * The per-column footer summaries, computed over the FILTERED and SEARCHED set —
+ * never over the loaded page. `aggregations` maps a field key to one summary name;
+ * the database whitelists the name against the field's type before it touches SQL.
+ * Returns a map of field key -> value.
+ */
+export async function aggregateRecords(
+  tableId: string,
+  spec: QuerySpec = {},
+  aggregations: Row = {}
+): Promise<Row> {
+  const { data, error } = await db().rpc("swamp_aggregate", {
+    p_table_id: tableId,
+    p_spec: spec,
+    p_aggs: aggregations,
+  });
+  if (error) fail("aggregateRecords", error);
+  return (data as Row) ?? {};
+}
+
 // ─── Records: the write path ────────────────────────────────────────────────
 
 export interface WriteError {

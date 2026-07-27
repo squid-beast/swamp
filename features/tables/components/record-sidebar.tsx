@@ -34,7 +34,7 @@ export function RecordSidebar({
   const [tab, setTab] = React.useState<"comments" | "history">("comments");
 
   return (
-    <aside className="flex w-80 shrink-0 flex-col border-l">
+    <aside className="flex h-full w-full min-w-0 flex-col">
       <div className="flex border-b">
         {(
           [

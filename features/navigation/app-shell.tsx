@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { usePathname } from "next/navigation";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Search } from "lucide-react";
 import type { NavBase } from "@/features/tables/nav";
 import {
@@ -36,6 +37,7 @@ export function AppShell({
 }) {
   const pathname = usePathname();
   const [cmdOpen, setCmdOpen] = React.useState(false);
+  const reduceMotion = useReducedMotion();
 
   React.useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -103,7 +105,26 @@ export function AppShell({
           </div>
         </header>
 
-        <div className="min-w-0 flex-1">{children}</div>
+        {/* View/route transition. A quick, functional fade-and-rise keyed on the
+            path so moving between tables/pages reads as a change, not a flash.
+            Enter-only (no exit): the App Router swaps children synchronously, so an
+            exit animation would need the old tree kept alive — not worth it for a
+            grid. Reduced-motion users get the content immediately. */}
+        {reduceMotion ? (
+          <div className="min-w-0 flex-1">{children}</div>
+        ) : (
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={pathname}
+              className="flex min-h-0 min-w-0 flex-1 flex-col"
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.18, ease: [0.22, 0.8, 0.24, 1] }}
+            >
+              {children}
+            </motion.div>
+          </AnimatePresence>
+        )}
       </SidebarInset>
 
       <CommandMenu bases={bases} open={cmdOpen} onOpenChange={setCmdOpen} />

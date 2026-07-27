@@ -31,6 +31,9 @@ export async function sendEmail(opts: {
   to: string;
   subject: string;
   html: string;
+  /** Plain-text alternative. HTML-only mail scores worse with spam filters, so
+   *  every template ships one; it's optional here only for backward compat. */
+  text?: string;
   /** Where a reply goes. Defaults to hello@, so a "reply to this invite" reaches
    *  a human instead of a black hole. */
   replyTo?: string;
@@ -57,6 +60,7 @@ export async function sendEmail(opts: {
         to: [opts.to],
         subject: opts.subject,
         html: opts.html,
+        ...(opts.text ? { text: opts.text } : {}),
         reply_to: opts.replyTo ?? "hello@swampy.app",
       }),
       signal: controller.signal,

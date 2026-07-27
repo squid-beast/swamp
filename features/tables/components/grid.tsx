@@ -13,7 +13,8 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/shared/ui/context-menu";
-import { isReadOnlyField, PALETTE_HEX, type Field, type Record_ } from "../types";
+import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/popover";
+import { aggregationsFor, isReadOnlyField, PALETTE_HEX, type Field, type Record_ } from "../types";
 import { inRange, type CellRef, type Range as CellRange } from "../use-grid";
 import { CellView } from "./cell";
 
@@ -139,6 +140,13 @@ export interface GridProps {
   tableId: string;
   onLinksChanged: () => void;
 
+  /** Chosen footer summary per column, keyed by field KEY. */
+  aggregations?: Record<string, string>;
+  /** The computed summary values, keyed by field KEY. From swamp_aggregate. */
+  aggValues?: Record<string, unknown>;
+  /** Set (or clear, with null) a column's summary. Undefined = read-only footer. */
+  onSetAggregation?: (fieldId: string, aggregation: string | null) => void;
+
   selected: Set<string>;
   onSelectedChange: (next: Set<string>) => void;
 
@@ -171,6 +179,120 @@ export interface GridProps {
   /** A row's colour, as a palette name (see TINT_HEX). Undefined/null = no tint.
    *  Resolved by the workspace from the view's colour field. */
   rowColor?: (record: Record_) => string | null | undefined;
+}
+
+// Human labels for the aggregation names. The keys are the canonical names from
+// aggregationsFor (types.ts); a name with no entry falls back to itself.
+const AGG_LABELS: Record<string, string> = {
+  count: "Count",
+  count_empty: "Empty",
+  count_filled: "Filled",
+  count_unique: "Unique",
+  percent_empty: "% Empty",
+  percent_filled: "% Filled",
+  sum: "Sum",
+  min: "Min",
+  max: "Max",
+  avg: "Average",
+  median: "Median",
+  checked: "Checked",
+  unchecked: "Unchecked",
+  percent_checked: "% Checked",
+  earliest: "Earliest",
+  latest: "Latest",
+};
+
+function formatAggValue(value: unknown, agg: string): string {
+  if (value === null || value === undefined) return "—";
+  if (typeof value === "number") {
+    const s = Number.isInteger(value)
+      ? value.toLocaleString()
+      : value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+    return agg.startsWith("percent") ? `${s}%` : s;
+  }
+  return String(value);
+}
+
+/** One footer cell: shows the chosen summary + value, or a quiet "Summary"
+ *  affordance on hover. Clicking opens a Popover of the summaries valid for the
+ *  field's type, plus "None". Read-only (no onChange) when the viewer can't edit. */
+function FooterCell({
+  field,
+  aggregation,
+  value,
+  onChange,
+}: {
+  field: Field;
+  aggregation: string | null;
+  value: unknown;
+  onChange?: (aggregation: string | null) => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+
+  const body = aggregation ? (
+    <span className="flex w-full items-center justify-end gap-1.5 px-3 py-1.5 text-[12px] tabular-nums">
+      <span className="truncate text-muted-foreground">{AGG_LABELS[aggregation] ?? aggregation}</span>
+      <span className="font-medium">{formatAggValue(value, aggregation)}</span>
+    </span>
+  ) : (
+    <span className="flex w-full items-center justify-end px-3 py-1.5 text-[12px] text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">
+      Summary
+    </span>
+  );
+
+  if (!onChange) {
+    return <div className="group flex items-center border-r">{body}</div>;
+  }
+
+  return (
+    <div className="group flex items-stretch border-r">
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            className="flex w-full items-center hover:bg-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
+            title={field.name}
+            data-testid="footer-agg"
+          >
+            {body}
+          </button>
+        </PopoverTrigger>
+        <PopoverContent align="end" className="w-44 p-1">
+          <div className="flex flex-col">
+            <button
+              type="button"
+              onClick={() => {
+                onChange(null);
+                setOpen(false);
+              }}
+              className={cn(
+                "rounded-sm px-2 py-1.5 text-left text-[13px] hover:bg-muted",
+                !aggregation && "font-medium"
+              )}
+            >
+              None
+            </button>
+            {aggregationsFor(field.type).map((op) => (
+              <button
+                key={op}
+                type="button"
+                onClick={() => {
+                  onChange(op);
+                  setOpen(false);
+                }}
+                className={cn(
+                  "rounded-sm px-2 py-1.5 text-left text-[13px] hover:bg-muted",
+                  aggregation === op && "font-medium"
+                )}
+              >
+                {AGG_LABELS[op] ?? op}
+              </button>
+            ))}
+          </div>
+        </PopoverContent>
+      </Popover>
+    </div>
+  );
 }
 
 export function Grid(props: GridProps) {
@@ -206,6 +328,9 @@ export function Grid(props: GridProps) {
     onMoveRecord,
     groups,
     rowColor,
+    aggregations,
+    aggValues,
+    onSetAggregation,
   } = props;
 
   const scrollRef = React.useRef<HTMLDivElement>(null);
@@ -392,7 +517,7 @@ export function Grid(props: GridProps) {
             >
               <button
                 onClick={() => onEditField(f)}
-                className="flex min-w-0 flex-1 items-center gap-1 px-3 py-2 text-left text-[13px] font-medium hover:bg-muted"
+                className="flex min-w-0 flex-1 items-center gap-1 px-3 py-2 text-left text-[13px] font-medium hover:bg-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
                 title={`${f.name} — click to edit`}
               >
                 <span className="truncate">{f.name}</span>
@@ -458,8 +583,11 @@ export function Grid(props: GridProps) {
               <div
                 key={record.id}
                 className={cn(
-                  "group absolute left-0 top-0 grid border-b hover:bg-muted/30",
-                  isSelected && "bg-muted/50",
+                  // Hover is neutral and quiet; selection is the brand accent, so
+                  // the two never read as the same state. A selected row keeps its
+                  // tint on hover (a touch stronger) rather than reverting to muted.
+                  "group absolute left-0 top-0 grid border-b transition-colors hover:bg-muted/40",
+                  isSelected && "bg-brand/10 hover:bg-brand/15",
                   dragRow === rowIndex && "opacity-40",
                   isDropTarget && "border-t-2 border-t-brand"
                 )}
@@ -584,7 +712,9 @@ export function Grid(props: GridProps) {
                             "relative min-w-0 border-r px-3 py-1.5",
                             rowHeight === "short" ? "flex items-center" : "overflow-hidden",
                             selectedCell && "bg-brand/10",
-                            isActive && "z-10 outline outline-2 -outline-offset-2 outline-brand"
+                            // Active cell: a tight brand ring hugging the cell edge,
+                            // the same accent as the fill handle and row selection.
+                            isActive && "z-10 outline outline-2 -outline-offset-1 outline-brand"
                           )}
                           data-testid="grid-cell"
                         >
@@ -668,6 +798,27 @@ export function Grid(props: GridProps) {
             Loading more…
           </div>
         )}
+
+        {/* Summary footer. INSIDE the scroll container and sharing the header's
+            column template, so it scrolls horizontally in step with the columns
+            and sticks to the bottom exactly as the header sticks to the top. */}
+        <div
+          className="sticky bottom-0 z-20 grid border-t bg-muted/50 backdrop-blur"
+          style={{ gridTemplateColumns: gridTemplate, width: "max-content", minWidth: "100%" }}
+        >
+          <div className="border-r" />
+          {fields.map((f) => (
+            <FooterCell
+              key={f.id}
+              field={f}
+              aggregation={aggregations?.[f.key] ?? null}
+              value={aggValues?.[f.key]}
+              onChange={
+                onSetAggregation ? (agg) => onSetAggregation(f.id, agg) : undefined
+              }
+            />
+          ))}
+        </div>
       </div>
 
       <div className="flex items-center gap-3 border-t px-3 py-2">

@@ -3,28 +3,102 @@
      Fires only if a user changes their account email. Paste the whole thing.
      Variable used: {{ .ConfirmationURL }}
      ════════════════════════════════════════════════════════════════════════════ -->
-<div style="margin:0;padding:0;background:#f4f6f5;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;">
-  <div style="max-width:520px;margin:0 auto;padding:32px 20px;">
-    <div style="margin-bottom:20px;">
-      <img src="https://swampy.app/logo.png" width="26" height="26" alt="SWAMP" style="vertical-align:middle;border:0;" />
-      <span style="font-size:20px;font-weight:800;letter-spacing:-0.02em;color:#0b0b0c;vertical-align:middle;margin-left:8px;">SWAMP</span>
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="supported-color-schemes" content="light dark" />
+    <title>Confirm your new email</title>
+    <style>
+      /* Dark clients get an intentional dark version instead of an auto-inverted
+         one. Inline styles still win everywhere else; this only kicks in when the
+         client actually honours the query. */
+      @media (prefers-color-scheme: dark) {
+        .swamp-page { background:#07100c !important; }
+        .swamp-card { background:#0f1512 !important; border-color:#1d2a24 !important; }
+        .swamp-ink { color:#e7ece9 !important; }
+        .swamp-muted { color:#9aa8a2 !important; }
+        .swamp-link { color:#4ade80 !important; }
+      }
+    </style>
+  </head>
+  <body class="swamp-page" style="margin:0;padding:0;background:#f4f6f5;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;">
+    <!-- Preheader: the inbox-preview line. Hidden, but read by the client. -->
+    <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;font-size:1px;line-height:1px;color:#f4f6f5;opacity:0;">
+      Confirm the new address on your SWAMP account.
     </div>
-    <div style="background:#ffffff;border:1px solid #e4e8e6;border-radius:12px;padding:28px;">
-      <h1 style="font-size:19px;font-weight:700;color:#0b1220;margin:0 0 12px;">Confirm your new email</h1>
-      <p style="font-size:15px;line-height:1.6;color:#0b1220;margin:0 0 22px;">
-        You asked to change the email on your SWAMP account. Tap the button to confirm this new address.
-      </p>
-      <div style="margin:0 0 22px;">
-        <a href="{{ .ConfirmationURL }}" style="display:inline-block;background:#0b0b0c;color:#ffffff;text-decoration:none;font-size:15px;font-weight:600;padding:12px 22px;border-radius:8px;">Confirm new email</a>
-      </div>
-      <p style="font-size:13px;line-height:1.6;color:#5f6b66;margin:0;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f4f6f5;">
+      <tr>
+        <td align="center" style="padding:32px 16px;">
+          <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;">
+            <!-- Dark header band: the showcase moment, the same image a pasted
+                 SWAMP link renders in Slack. -->
+            <tr>
+              <td style="background:#0b0f0e;background-image:radial-gradient(circle at 85% 15%, rgba(74,222,128,0.14), transparent 55%);border-radius:16px 16px 0 0;padding:26px 32px;">
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                  <tr>
+                    <td style="padding-right:12px;vertical-align:middle;">
+                      <img src="https://swampy.app/logo.png" width="34" height="34" alt="SWAMP" style="display:block;border:0;border-radius:9px;" />
+                    </td>
+                    <td style="vertical-align:middle;">
+                      <span style="font-size:22px;font-weight:800;letter-spacing:-0.02em;color:#f2f5f4;">SWAMP</span>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <!-- White content card. -->
+            <tr>
+              <td class="swamp-card" style="background:#ffffff;border:1px solid #e4e8e6;border-top:0;padding:32px;">
+                
+      <h1 class="swamp-ink" style="font-size:20px;font-weight:700;color:#0b1220;margin:0 0 14px;">Confirm your new email</h1>
+      <p class="swamp-ink" style="font-size:15px;line-height:1.6;color:#0b1220;margin:0 0 14px;">You asked to change the email on your SWAMP account. Tap the button to confirm this new address.</p>
+      <div style="margin:22px 0;"><table role="presentation" cellpadding="0" cellspacing="0" border="0">
+    <tr>
+      <td align="center" bgcolor="#4ade80" style="border-radius:8px;">
+        <!--[if mso]>
+        <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="{{ .ConfirmationURL }}" style="height:46px;v-text-anchor:middle;width:240px;" arcsize="17%" strokecolor="#4ade80" fillcolor="#4ade80">
+          <w:anchorlock/>
+          <center style="color:#ffffff;font-family:sans-serif;font-size:15px;font-weight:bold;">Confirm new email</center>
+        </v:roundrect>
+        <![endif]-->
+        <!--[if !mso]><!-->
+        <a href="{{ .ConfirmationURL }}" style="display:inline-block;background:#4ade80;color:#ffffff;text-decoration:none;font-size:15px;font-weight:700;line-height:46px;padding:0 26px;border-radius:8px;">Confirm new email</a>
+        <!--<![endif]-->
+      </td>
+    </tr>
+  </table></div>
+      <p class="swamp-muted" style="font-size:13px;line-height:1.6;color:#5f6b66;margin:0;">
         Or paste this into your browser:<br/>
-        <a href="{{ .ConfirmationURL }}" style="color:#0b0b0c;word-break:break-all;">{{ .ConfirmationURL }}</a>
+        <a href="{{ .ConfirmationURL }}" class="swamp-link" style="color:#4ade80;word-break:break-all;">{{ .ConfirmationURL }}</a>
       </p>
-    </div>
-    <p style="color:#5f6b66;font-size:12px;line-height:1.6;margin:20px 4px 0;">
-      Sent by SWAMP · <a href="https://swampy.app" style="color:#5f6b66;">swampy.app</a><br/>
-      If you didn't request this change, ignore this email and your address stays the same.
-    </p>
-  </div>
-</div>
+              </td>
+            </tr>
+            <!-- Footer, with the four-square accent motif at low opacity. -->
+            <tr>
+              <td style="padding:20px 8px 0;">
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+                  <tr>
+                    <td style="vertical-align:middle;">
+                      <p class="swamp-muted" style="color:#5f6b66;font-size:12px;line-height:1.6;margin:0;">
+                        Sent by SWAMP · <a href="https://swampy.app" class="swamp-link" style="color:#5f6b66;text-decoration:underline;">swampy.app</a><br/>
+                        If you didn't request this change, ignore this email and your address stays the same.
+                      </p>
+                    </td>
+                    <td style="vertical-align:middle;text-align:right;white-space:nowrap;">
+                      <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="right">
+                        <tr><td style="padding:0 3px;"><div style="width:9px;height:9px;border-radius:2px;background:#4ade80;opacity:0.9;font-size:1px;line-height:1px;">&nbsp;</div></td><td style="padding:0 3px;"><div style="width:9px;height:9px;border-radius:2px;background:#4ade80;opacity:0.6;font-size:1px;line-height:1px;">&nbsp;</div></td><td style="padding:0 3px;"><div style="width:9px;height:9px;border-radius:2px;background:#4ade80;opacity:0.35;font-size:1px;line-height:1px;">&nbsp;</div></td><td style="padding:0 3px;"><div style="width:9px;height:9px;border-radius:2px;background:#4ade80;opacity:0.2;font-size:1px;line-height:1px;">&nbsp;</div></td></tr>
+                      </table>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

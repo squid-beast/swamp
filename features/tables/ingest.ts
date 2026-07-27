@@ -90,3 +90,26 @@ export function resolveIngestFields(
 
   return { fields: out, unknownKeys };
 }
+
+/**
+ * Resolve a user-supplied `upsertOn` ("Email") to a field KEY, using the same
+ * case/whitespace-insensitive key-then-name matching as resolveIngestFields.
+ *
+ * Returns null if it matches no field, or if the matched field is read-only —
+ * upserting on a formula or a created stamp is never what the caller means, and
+ * the SQL would refuse it anyway. Null tells the route to answer 400.
+ */
+export function resolveUpsertKey(
+  fields: Pick<ApiField, "key" | "name" | "readOnly">[],
+  upsertOn: string
+): string | null {
+  const byKey = new Map(fields.map((f) => [f.key.toLowerCase(), f]));
+  const byName = new Map(fields.map((f) => [f.name.toLowerCase().trim(), f]));
+
+  const needle = upsertOn.toLowerCase().trim();
+  const field = byKey.get(needle) ?? byName.get(needle);
+
+  if (!field || field.readOnly) return null;
+
+  return field.key;
+}

@@ -69,13 +69,13 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       .eq("id", params.id)
       .maybeSingle();
 
-    const { subject, html } = inviteEmail({
+    const { subject, html, text } = inviteEmail({
       url: absolute(`/invite/${invite.token}`),
       role: invite.role,
       baseName: (base?.name as string) ?? null,
     });
 
-    void sendEmail({ to: invite.email, subject, html }).catch(() => {});
+    void sendEmail({ to: invite.email, subject, html, text }).catch(() => {});
 
     return NextResponse.json({ invite });
   } catch (e) {

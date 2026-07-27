@@ -215,6 +215,59 @@ export function TableWorkspace({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [countsKey, table.id]);
 
+  // ── Column footer summaries ──
+  //
+  // The chosen summary per field lives in view_fields.aggregation. Collapse it to a
+  // { fieldKey: aggName } map for the request, keyed by KEY because that is what the
+  // SQL and the returned value map speak. Only visible columns can show a footer.
+  const aggChoices = React.useMemo(() => {
+    const byId = new Map(config.viewFields.map((vf) => [vf.fieldId, vf.aggregation]));
+    const out: Record<string, string> = {};
+    for (const f of visibleFields) {
+      const agg = byId.get(f.id);
+      if (agg) out[f.key] = agg;
+    }
+    return out;
+  }, [config.viewFields, visibleFields]);
+
+  // The computed values, field key -> value. Refetched on exactly the things that
+  // change the answer — the FILTER, the SEARCH and the aggregation CHOICES — the
+  // same triggers (minus sort, which can't move a total) that refetch `total`.
+  const [aggValues, setAggValues] = React.useState<Record<string, unknown>>({});
+  const aggKey = JSON.stringify({ f: config.filter, s: debounced, a: aggChoices });
+
+  React.useEffect(() => {
+    if (!Object.keys(aggChoices).length) {
+      setAggValues({});
+      return;
+    }
+
+    let alive = true;
+    void fetch(`/api/tables/${table.id}/aggregate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        spec: {
+          ...(config.filter ? { filter: config.filter } : {}),
+          ...(debounced ? { search: debounced } : {}),
+        },
+        aggregations: aggChoices,
+      }),
+    })
+      .then((r) => (r.ok ? r.json() : { values: {} }))
+      .then((b: { values?: Record<string, unknown> }) => {
+        if (alive) setAggValues(b.values ?? {});
+      })
+      .catch(() => alive && setAggValues({}));
+
+    return () => {
+      alive = false;
+    };
+    // aggKey collapses the three things that move the answer; the filter object is
+    // rebuilt every render and would otherwise refetch forever.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aggKey, table.id]);
+
   // A cell edit can change a rollup/formula/lookup/count on a DIFFERENT row, which
   // only the server can compute. When the table has such fields, refetch after a
   // write — debounced, so a burst of typing is one request, not one per keystroke.
@@ -292,6 +345,17 @@ export function TableWorkspace({
       setConfig((await res.json()) as ViewConfigData);
     },
     [view.id]
+  );
+
+  // Persist a footer summary choice through the same view_fields path everything
+  // else uses; saveViewFields batches by key signature, so a lone { fieldId,
+  // aggregation } is safe. patchConfig returns the fresh config, aggChoices
+  // recomputes, and the effect above refetches the value.
+  const setAggregation = React.useCallback(
+    (fieldId: string, aggregation: string | null) => {
+      void patchConfig({ viewFields: [{ fieldId, aggregation }] });
+    },
+    [patchConfig]
   );
 
   // The view ROW (name, lockType, config blob) — distinct from patchConfig above,
@@ -645,6 +709,9 @@ export function TableWorkspace({
           fields={visibleFields}
           records={records}
           total={total}
+          aggregations={aggChoices}
+          aggValues={aggValues}
+          onSetAggregation={canEdit ? setAggregation : undefined}
           loading={loading}
           loadingMore={loadingMore}
           hasMore={!!cursor}

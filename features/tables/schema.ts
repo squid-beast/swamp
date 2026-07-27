@@ -174,6 +174,21 @@ export const querySpecSchema = z
   })
   .strict();
 
+// ─── Aggregation ────────────────────────────────────────────────────────────
+//
+// `{ spec, aggregations }`, where `aggregations` maps a field KEY to one summary
+// name. The name is NOT enumerated here on purpose: the legal set depends on the
+// field's type, and that check lives next to the catalog, in swamp_aggregate,
+// which whitelists it before it can reach SQL. Validating the shape here turns a
+// malformed body into a 400; the database owns the meaning.
+
+export const aggregateRequestSchema = z
+  .object({
+    spec: querySpecSchema.optional().default({}),
+    aggregations: z.record(z.string().min(1), z.string().min(1)).default({}),
+  })
+  .strict();
+
 // ─── Writes ─────────────────────────────────────────────────────────────────
 
 export const createBaseSchema = z

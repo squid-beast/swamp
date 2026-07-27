@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { recordsFrom, resolveIngestFields } from "@/features/tables/ingest";
+import { recordsFrom, resolveIngestFields, resolveUpsertKey } from "@/features/tables/ingest";
 
 // The ingest mapper is pure: shape-forgiveness and name→key resolution, with no
 // database. Authority and value validity live in the SECURITY DEFINER path and are
@@ -68,5 +68,30 @@ describe("resolveIngestFields", () => {
   it("prefers the key match over the name match", () => {
     const { fields } = resolveIngestFields(FIELDS, { fld_name: "byKey" });
     expect(fields).toEqual({ fld_name: "byKey" });
+  });
+});
+
+describe("resolveUpsertKey", () => {
+  it("resolves a display name to its field key, case- and space-insensitively", () => {
+    expect(resolveUpsertKey(FIELDS, "Email")).toBe("fld_email");
+    expect(resolveUpsertKey(FIELDS, "  email ")).toBe("fld_email");
+    expect(resolveUpsertKey(FIELDS, "FULL NAME")).toBe("fld_name");
+  });
+
+  it("resolves a field key directly, case-insensitively", () => {
+    expect(resolveUpsertKey(FIELDS, "fld_email")).toBe("fld_email");
+    expect(resolveUpsertKey(FIELDS, "FLD_EMAIL")).toBe("fld_email");
+  });
+
+  it("returns null for a field that does not exist", () => {
+    expect(resolveUpsertKey(FIELDS, "Phone")).toBeNull();
+    expect(resolveUpsertKey(FIELDS, "fld_nope")).toBeNull();
+  });
+
+  it("returns null for a read-only / computed field — upserting on it is never meant", () => {
+    // "Created Time" is readOnly: a formula or stamp can't be an upsert key, and the
+    // SQL would refuse it anyway. Null tells the route to answer 400.
+    expect(resolveUpsertKey(FIELDS, "Created Time")).toBeNull();
+    expect(resolveUpsertKey(FIELDS, "fld_created")).toBeNull();
   });
 });

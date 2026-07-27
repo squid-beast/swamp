@@ -37,6 +37,10 @@ const patchSchema = z
         groupBy: z.boolean().optional(),
         groupByOrder: z.number().int().min(0).max(2).nullable().optional(),
         groupByDir: z.enum(["asc", "desc"]).nullable().optional(),
+        // The chosen footer summary. null clears it. The name is validated for the
+        // field's type in swamp_aggregate, where the catalog is; here it's just a
+        // persisted string.
+        aggregation: z.string().max(40).nullable().optional(),
         formConfig: z
           .object({
             label: z.string().max(200).optional(),

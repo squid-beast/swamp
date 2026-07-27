@@ -20,7 +20,7 @@ import { NextResponse } from "next/server";
 // matches. Unset means "*", which is correct for a public lead-gen API.
 // ════════════════════════════════════════════════════════════════════════════
 
-const HEADERS = "authorization, content-type, x-swamp-share-password";
+const HEADERS = "authorization, content-type, x-swamp-share-password, idempotency-key";
 const METHODS = "GET, POST, PATCH, DELETE, OPTIONS";
 
 function allowList(): string[] | null {

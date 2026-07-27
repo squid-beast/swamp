@@ -71,6 +71,14 @@ const ALLOWED = new Set([
   // product data, and cannot lower anyone else's limit without the exact hashed
   // key. See 20260717010000_leadgen_platform.sql.
   "swamp_rate_limit",
+  // Upsert-by-field for the ingest route. Same authority as swamp_api_insert —
+  // the token is checked on entry and its role re-read from live membership.
+  "swamp_api_upsert",
+  // Idempotency store for the ingest route, reached only on the anon client. Both
+  // touch an app-hashed opaque key and expose no product data; claim returns a
+  // status/replayed-body, finish returns nothing. See 20260721000000_ingest_reliability.sql.
+  "swamp_idempotency_claim",
+  "swamp_idempotency_finish",
 ]);
 
 let db: Client;

@@ -6,6 +6,11 @@ import { Check, Plus, X } from "lucide-react";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/popover";
+import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from "@/shared/ui/hover-card";
 import { cn } from "@/shared/lib/utils";
 import type { Field } from "../types";
 
@@ -62,7 +67,21 @@ export function LinkCell({
           key={l.id}
           className="group/chip inline-flex max-w-full items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-[12px]"
         >
-          <span className="truncate">{l.label || "Untitled"}</span>
+          {/* Hover a chip to preview the linked record's name in full — useful
+              when the chip is truncated inside a narrow column. */}
+          <HoverCard openDelay={250} closeDelay={80}>
+            <HoverCardTrigger asChild>
+              <span className="truncate">{l.label || "Untitled"}</span>
+            </HoverCardTrigger>
+            <HoverCardContent align="start" className="w-64 p-3">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                Linked record
+              </p>
+              <p className="mt-1 text-[13px] font-medium">
+                {l.label || "Untitled"}
+              </p>
+            </HoverCardContent>
+          </HoverCard>
           <button
             onClick={(e) => {
               e.stopPropagation();

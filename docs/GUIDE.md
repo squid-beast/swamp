@@ -72,6 +72,18 @@ curl -X POST "https://YOUR_HOST/api/ingest/TABLE_ID" \
 
 Also accepts `{ "fields": { … } }` or `{ "records": [ … ] }` (max 50). CORS enabled. Prefer a **public Form view** over putting a write token in browser JS.
 
+**Safe retries.** Send an `Idempotency-Key` header with a unique value per submission. Replaying the same key returns the original response instead of creating a second record — protects against transport retries (timeouts, `502`s, Zapier/Make auto-retry).
+
+**Upsert.** Add `?upsertOn=Email` (any column name or field key) so a record whose key value matches an existing one **updates** it instead of inserting a duplicate. Only sent fields change. The response then also includes `created` and `updated` counts.
+
+```bash
+curl -X POST "https://YOUR_HOST/api/ingest/TABLE_ID?upsertOn=Email" \
+  -H "Authorization: Bearer swamp_pat_…" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: 6b9c1e2a-…" \
+  -d '{ "Full Name": "Ada Lovelace", "Email": "ada@example.com" }'
+```
+
 ### Strict REST API
 - `GET /api/v1/meta` — base, tables, field **keys** (use keys in scripts; they never rename).
 - `GET|POST|PATCH|DELETE /api/v1/tables/:tableId/records`

@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { apiError, apiInsert, apiMeta, bearer, InvalidValues } from "@/features/tables/rest";
-import { recordsFrom, resolveIngestFields } from "@/features/tables/ingest";
+import { apiError, apiInsert, apiMeta, apiUpsert, bearer, InvalidValues } from "@/features/tables/rest";
+import { recordsFrom, resolveIngestFields, resolveUpsertKey } from "@/features/tables/ingest";
 import { preflight, withCors } from "@/features/tables/cors";
 import { rateLimit, tooMany, V1_WRITE_LIMIT, WINDOW_SECONDS } from "@/features/tables/rate-limit";
+import { claim, finish } from "@/features/tables/idempotency";
 
 // ── POST /api/ingest/:tableId ──
 //
@@ -45,6 +46,36 @@ export async function POST(req: NextRequest, { params }: { params: { tableId: st
     return withCors(tooMany(WINDOW_SECONDS), origin);
   }
 
+  // Idempotency, before we touch the body: a retried POST carrying the same key
+  // replays the original response instead of creating a second lead. The bucket
+  // is per token + table + client key; idempotency.ts hashes it, so the raw token
+  // never lands in a table. Absent header ⇒ behaviour is exactly as before.
+  const idempotencyKey =
+    req.headers.get("idempotency-key") ?? req.headers.get("x-idempotency-key");
+  const bucket = idempotencyKey ? `${token}:${params.tableId}:${idempotencyKey}` : null;
+
+  if (bucket) {
+    const claimed = await claim(bucket);
+    if (claimed.status === "done") {
+      return withCors(
+        NextResponse.json(claimed.response, {
+          status: 200,
+          headers: { "Idempotency-Replayed": "true" },
+        }),
+        origin
+      );
+    }
+    if (claimed.status === "in_flight") {
+      return withCors(
+        NextResponse.json(
+          { error: "A request with this Idempotency-Key is already in progress." },
+          { status: 409 }
+        ),
+        origin
+      );
+    }
+  }
+
   const body = await req.json().catch(() => null);
   const incoming = recordsFrom(body);
   if (incoming.length === 0) {
@@ -60,6 +91,15 @@ export async function POST(req: NextRequest, { params }: { params: { tableId: st
     );
   }
 
+  // `upsertOn` may arrive as a query param (?upsertOn=Email) or a body field. When
+  // present, the same person submitting twice updates one record instead of
+  // duplicating it. Absent ⇒ plain insert, exactly as before.
+  const upsertOn =
+    req.nextUrl.searchParams.get("upsertOn") ??
+    (body && typeof body === "object" && !Array.isArray(body)
+      ? ((body as Record<string, unknown>).upsertOn as string | undefined) ?? null
+      : null);
+
   try {
     // One meta read resolves the table's fields; the token must be allowed to see it,
     // so an unreadable table fails here with the same 404/401/403 the API uses.
@@ -71,22 +111,48 @@ export async function POST(req: NextRequest, { params }: { params: { tableId: st
 
     const resolved = incoming.map((r) => resolveIngestFields(table.fields, r));
     const unknownKeys = [...new Set(resolved.flatMap((r) => r.unknownKeys))];
+    const rows = resolved.map((r) => ({ fields: r.fields }));
 
-    const records = await apiInsert(
-      token,
-      params.tableId,
-      resolved.map((r) => ({ fields: r.fields }))
-    );
+    let responseBody: Record<string, unknown>;
+
+    if (upsertOn) {
+      const keyField = resolveUpsertKey(table.fields, upsertOn);
+      if (!keyField) {
+        return withCors(
+          NextResponse.json(
+            { error: `Cannot upsert on "${upsertOn}" — no writable field matches it.` },
+            { status: 400 }
+          ),
+          origin
+        );
+      }
+
+      const { created, updated, records } = await apiUpsert(
+        token,
+        params.tableId,
+        rows,
+        keyField
+      );
+      responseBody = {
+        records,
+        created,
+        updated,
+        ...(unknownKeys.length ? { ignoredKeys: unknownKeys } : {}),
+      };
+    } else {
+      const records = await apiInsert(token, params.tableId, rows);
+      responseBody = {
+        records,
+        ...(unknownKeys.length ? { ignoredKeys: unknownKeys } : {}),
+      };
+    }
+
+    // Store the body so a retry with the same key replays it verbatim.
+    if (bucket) await finish(bucket, responseBody);
 
     // The 201 reports which incoming keys matched nothing, so an integration author
     // can see a "Fisrt Name" typo without the record silently missing a column.
-    return withCors(
-      NextResponse.json(
-        { records, ...(unknownKeys.length ? { ignoredKeys: unknownKeys } : {}) },
-        { status: 201 }
-      ),
-      origin
-    );
+    return withCors(NextResponse.json(responseBody, { status: 201 }), origin);
   } catch (e) {
     if (e instanceof InvalidValues) {
       return withCors(

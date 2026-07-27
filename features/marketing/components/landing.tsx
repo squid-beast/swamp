@@ -10,9 +10,9 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/shared/ui/accordion";
-import { ProductFrame } from "./product-frame";
 import { ParticleField } from "./particle-field";
 import { Reveal } from "./reveal";
+import { Hero } from "./hero";
 
 // ════════════════════════════════════════════════════════════════════════════
 // The home page.
@@ -62,73 +62,6 @@ export function Landing() {
   );
 }
 
-// ─── Hero ───────────────────────────────────────────────────────────────────
-
-function Hero() {
-  return (
-    <section className="relative overflow-hidden border-b">
-      {/* Animated, monochrome: soft orbs drift over a faint grid. Pure CSS, and it
-          freezes for anyone with reduced-motion on. */}
-      <ParticleField />
-
-      <div className="relative mx-auto max-w-6xl px-4 pb-16 pt-16 md:pb-24 md:pt-24">
-        <div className="mx-auto max-w-3xl text-center">
-          <Link
-            href="/auth/register"
-            className="group inline-flex items-center gap-2 rounded-full border bg-background/60 py-1 pl-1.5 pr-3 text-[12.5px] transition-colors hover:bg-background"
-          >
-            <span className="rounded-full bg-primary/15 px-2 py-0.5 text-[11px] font-semibold text-primary">
-              Beta
-            </span>
-            <span className="text-muted-foreground">Free to use, and open source</span>
-            <ArrowRight className="size-3.5 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
-          </Link>
-
-          {/* The one H1. It IS the target phrase, and it's also just true. */}
-          <h1 className="mt-6 font-display text-4xl font-extrabold leading-[1.06] tracking-tight md:text-6xl">
-            The shared database your team can{" "}
-            <span className="text-primary">actually use</span>
-          </h1>
-
-          {/* The primary phrase lands in the first 100 words, without being wedged
-              in — because it's the plainest way to say what this does. */}
-          <p className="mx-auto mt-6 max-w-2xl text-[16.5px] leading-relaxed text-muted-foreground md:text-[18px]">
-            Import a spreadsheet and get a real database. Link tables together, filter
-            and sort right in the browser, comment on a row, and see who changed what.
-            Give each person exactly the access they should have. Share a view with a
-            link. Collect answers with a form.
-          </p>
-
-          <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
-            <Button asChild size="lg" className="h-12 w-full gap-2 px-7 text-[15px] sm:w-auto">
-              <Link href="/auth/register">
-                Start free
-                <ArrowRight className="size-4" />
-              </Link>
-            </Button>
-            <Button
-              asChild
-              size="lg"
-              variant="outline"
-              className="h-12 w-full px-7 text-[15px] sm:w-auto"
-            >
-              <Link href="#how-it-works">See how it works</Link>
-            </Button>
-          </div>
-
-          <p className="mt-5 text-[13px] text-muted-foreground">
-            Sign in with Google, or an email and a password. Either is fine.
-          </p>
-        </div>
-
-        <Reveal className="relative mx-auto mt-14 max-w-5xl md:mt-16">
-          <ProductFrame />
-        </Reveal>
-      </div>
-    </section>
-  );
-}
-
 // ─── Use-cases band ─────────────────────────────────────────────────────────
 
 function UseCasesBand() {
@@ -150,17 +83,17 @@ const STEPS = [
   {
     n: "01",
     title: "Drop in a file",
-    body: "CSV, XLSX, or JSON. Every column gets a type from what's in it. A zip code stays a zip code, so 02134 doesn't turn into 2134. That one slip is how most importers quietly wreck a column.",
+    body: "CSV, XLSX, or JSON. Every column gets a type from its values — a zip code stays 02134, not 2134, which is how most importers quietly wreck a column.",
   },
   {
     n: "02",
     title: "Give it a shape",
-    body: "Rename a column, change its type, hide it. Point one table at another and the link runs both ways. Add a rollup and the total keeps itself current. None of this rewrites a row, so you can change your mind and change it straight back.",
+    body: "Rename a column, change its type, point one table at another and the link runs both ways. Nothing rewrites a row, so you can change your mind and change it straight back.",
   },
   {
     n: "03",
     title: "Hand it to someone",
-    body: "Invite them by email at the role you choose. Or send a read-only link to a view. No account needed, and the columns you hid stay hidden.",
+    body: "Invite them by email at the role you choose, or send a read-only link to a view. No account needed, and hidden columns stay hidden.",
   },
 ];
 
@@ -179,8 +112,7 @@ function HowItWorks() {
             Three steps, and you never write a schema
           </h2>
           <p className="mt-4 text-[16px] leading-relaxed text-muted-foreground">
-            Most tools make you model your data before you can look at it. Put the data
-            in first; the structure comes out the other side.
+            Put the data in first; the structure comes out the other side.
           </p>
         </div>
 
@@ -208,27 +140,27 @@ function HowItWorks() {
 const COLLAB = [
   {
     title: "Five roles, and they mean something",
-    body: "Viewer, commenter, editor, creator, owner. The line that trips people up is editor versus creator: an editor changes data and views, a creator changes the tables and fields themselves. People get that one wrong when they hand out access, so SWAMP spells it out.",
+    body: "Viewer, commenter, editor, creator, owner. The one that trips people up: an editor changes data and views, a creator changes the tables and fields themselves. SWAMP spells it out.",
   },
   {
     title: "Comment without being able to break anything",
-    body: "The commenter role is for the person who should be able to say “this looks off” without being able to change the data. You can edit your own comment. Nobody else can, at any role.",
+    body: "For the person who should be able to say “this looks off” without touching the data. You can edit your own comment; nobody else can, at any role.",
   },
   {
     title: "History, field by field",
-    body: "It records “Alice changed Stage from Open to Won,” not a vague “someone updated this record.” The log is append-only, so nobody can rewrite it, the owner included.",
+    body: "It records “Alice changed Stage from Open to Won,” not “someone updated this record.” The log is append-only — nobody rewrites it, the owner included.",
   },
   {
     title: "Their edit shows up in your grid",
-    body: "No refresh button. And no tug-of-war over your cursor while you're mid-word in a cell.",
+    body: "No refresh button, and no tug-of-war over your cursor mid-word in a cell.",
   },
   {
     title: "Send a link, not a copy",
-    body: "Share a view publicly, with a password if you want one. A hidden column can't be filtered or searched by a visitor either, so nobody works out a salary from the row count.",
+    body: "Share a view publicly, with a password if you want. A hidden column can't be filtered or searched by a visitor, so nobody infers a salary from the row count.",
   },
   {
     title: "Forms that write straight into a table",
-    body: "Conditional questions, a fixed set of options, a redirect when someone's done. Whatever the form doesn't show, nobody can make it write.",
+    body: "Conditional questions, a fixed set of options, a redirect when done. Whatever the form doesn't show, nobody can make it write.",
   },
 ];
 
@@ -244,9 +176,9 @@ function Collaboration() {
             The part that breaks when a second person shows up
           </h2>
           <p className="mt-4 text-[16px] leading-relaxed text-muted-foreground">
-            A spreadsheet is fine until someone else opens it. Then you&apos;re emailing
-            versions around, nobody&apos;s sure which one is current, and a single wrong
-            paste is gone for good. SWAMP built this part first.
+            A spreadsheet is fine until someone else opens it — then you&apos;re emailing
+            versions around and one wrong paste is gone for good. SWAMP built this part
+            first.
           </p>
         </div>
 
@@ -300,12 +232,9 @@ function Views() {
               One table. However you need to look at it.
             </h2>
             <p className="mt-4 text-[16px] leading-relaxed text-muted-foreground">
-              A view is a lens, not a copy. Change a value in one view and it changes in
-              all of them, because a single set of records sits underneath.
-            </p>
-            <p className="mt-4 text-[16px] leading-relaxed text-muted-foreground">
-              Filters, sorts, column order and column width are saved per view. Your
-              filter doesn&apos;t move someone else&apos;s.
+              A view is a lens, not a copy. Change a value in one and it changes in all
+              of them, because a single set of records sits underneath. Filters, sorts
+              and widths are saved per view, so yours doesn&apos;t move someone else&apos;s.
             </p>
           </div>
 
@@ -342,18 +271,17 @@ function Platform() {
               <p>
                 The same query engine the app uses, exposed. Scoped tokens, keyset
                 pagination, a filter tree, and records keyed by a{" "}
-                <strong className="font-medium text-foreground">stable field key</strong>{" "}
-                rather than a column name. Rename a column in the UI and your nightly
-                script keeps working.
+                <strong className="font-medium text-foreground">stable field key</strong>.
+                Rename a column in the UI and your nightly script keeps working.
               </p>
               <p>
                 Webhooks fire on a condition you write like a filter. Every delivery is
                 signed, retried, and logged.
               </p>
               <p>
-                A token can never do more than the person who made it. Its permissions
-                are recomputed on every call, so demoting someone stops their integration
-                on the very next request instead of the next key rotation.
+                A token can never do more than the person who made it. Permissions are
+                recomputed on every call, so demoting someone stops their integration on
+                the next request.
               </p>
             </div>
 
@@ -499,7 +427,11 @@ function FinalCta() {
         </p>
 
         <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
-          <Button asChild size="lg" className="h-12 w-full gap-2 px-8 text-[15px] sm:w-auto">
+          <Button
+            asChild
+            size="lg"
+            className="h-12 w-full gap-2 bg-brand px-8 text-[15px] text-brand-foreground hover:bg-brand/90 focus-visible:ring-brand sm:w-auto"
+          >
             <Link href="/auth/register">
               Start free
               <ArrowRight className="size-4" />
