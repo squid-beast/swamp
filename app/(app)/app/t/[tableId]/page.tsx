@@ -83,6 +83,9 @@ export default async function TablePage({
 
   return (
     <TableWorkspace
+      // The workspace seeds its state from these props, so switching views has to
+      // remount it — otherwise ?view=… changes the URL and nothing else.
+      key={view.id}
       table={table}
       fields={fields}
       views={views}

@@ -710,7 +710,13 @@ export function Grid(props: GridProps) {
                           onDoubleClick={() => !readOnly && setEditing(true)}
                           className={cn(
                             "relative min-w-0 border-r px-3 py-1.5",
-                            rowHeight === "short" ? "flex items-center" : "overflow-hidden",
+                            rowHeight === "short" && "flex items-center",
+                            // Clip the value so a long one can't bleed over the rows
+                            // below. The active cell and the fill-handle cell are left
+                            // unclipped on purpose: the long-text editor is an
+                            // absolutely-positioned overlay taller than a short row, and
+                            // the handle hangs 3px outside the cell. Both must escape.
+                            !isActive && !showHandle && "overflow-hidden",
                             selectedCell && "bg-brand/10",
                             // Active cell: a tight brand ring hugging the cell edge,
                             // the same accent as the fill handle and row selection.
