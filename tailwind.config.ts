@@ -1,5 +1,15 @@
 import type { Config } from "tailwindcss";
 
+/** A --swamp-<family>-<step> reference scale as Tailwind utilities, with
+ *  alpha support (`bg-brand-500/50`) via the hsl-triple token format. */
+const scale = (family: string) =>
+  Object.fromEntries(
+    [20, 50, 100, 200, 300, 400, 500, 600, 700, 800, 900].map((step) => [
+      step,
+      `hsl(var(--swamp-${family}-${step}) / <alpha-value>)`,
+    ])
+  );
+
 const config: Config = {
     darkMode: ["class"],
     content: [
@@ -18,9 +28,21 @@ const config: Config = {
   			background: 'hsl(var(--background))',
   			foreground: 'hsl(var(--foreground))',
   			brand: {
+  				...scale('brand'),
   				DEFAULT: 'hsl(var(--brand))',
   				foreground: 'hsl(var(--brand-foreground))'
   			},
+  			/* NocoDB reference scales. These shadow the same-named Tailwind
+  			   defaults for steps 20–900 (950 falls through to the default),
+  			   so existing text-gray-500-style classes adopt the system. */
+  			gray: scale('gray'),
+  			red: scale('red'),
+  			orange: scale('orange'),
+  			yellow: scale('yellow'),
+  			blue: scale('blue'),
+  			purple: scale('purple'),
+  			pink: scale('pink'),
+  			maroon: scale('maroon'),
   			success: 'hsl(var(--success))',
   			card: {
   				DEFAULT: 'hsl(var(--card))',

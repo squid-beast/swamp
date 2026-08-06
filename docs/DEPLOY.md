@@ -83,7 +83,7 @@ Copy the template from `.env.example`. Set vars **before** the first deploy (boo
 | Paste branded HTML from `docs/email/*.html` into Supabase Auth templates | Looks finished |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Sheets sync only — not needed for Google **sign-in** |
 | Custom domain + `NEXT_PUBLIC_SITE_URL` | Cleaner share/invite links |
-| Vercel **Pro** + change webhook cron to `* * * * *` | Near-real-time workflows |
+| Vercel **Pro** + change `/api/cron` schedule to `* * * * *` | Near-real-time workflows |
 
 ### Email (short)
 1. Resend → verify domain → API key.
@@ -95,8 +95,12 @@ Copy the template from `.env.example`. Set vars **before** the first deploy (boo
 
 | Route | Schedule | Purpose |
 |---|---|---|
-| `/api/webhooks/dispatch` | `0 8 * * *` (daily) | Deliver queued workflows |
-| `/api/attachments/gc` | `0 3 * * *` (daily) | Orphan file cleanup |
+| `/api/cron` | `0 8 * * *` (daily) | Fan-out: webhook dispatch → attachment GC → sheet sync |
+
+One cron entry runs all three jobs (Hobby caps the entry *count* at two as well
+as the frequency). Each job is individually reachable for testing —
+`/api/webhooks/dispatch`, `/api/attachments/gc`, `/api/sync` — same auth, GET or
+POST.
 
 Manual dispatch:
 

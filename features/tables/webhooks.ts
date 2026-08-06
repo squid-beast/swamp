@@ -1,9 +1,10 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/shared/supabase/server";
+import { sendEmail } from "@/shared/email/send";
 import { safeFetch, SafeFetchError } from "./safe-fetch";
 import { backoffMs, MAX_ATTEMPTS, sign } from "./webhook-crypto";
-import { buildDeliveryBody } from "./webhook-format";
+import { buildDeliveryBody, emailContent } from "./webhook-format";
 import type { FilterNode, Webhook, WebhookDelivery, WebhookEvent, WebhookKind } from "./types";
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -30,19 +31,20 @@ const toWebhook = (r: Row): Webhook => ({
   baseId: r.base_id as string,
   tableId: (r.table_id as string) ?? null,
   name: r.name as string,
-  url: r.url as string,
+  url: (r.url as string) ?? null,
   secret: r.secret as string,
   events: (r.events as WebhookEvent[]) ?? [],
   fieldIds: (r.field_ids as string[]) ?? [],
   condition: (r.condition as FilterNode) ?? null,
   kind: ((r.kind as WebhookKind) ?? "generic"),
   template: (r.template as string) ?? null,
+  config: (r.config as Record<string, unknown>) ?? {},
   active: !!r.active,
   createdAt: r.created_at as string,
 });
 
 const COLUMNS =
-  "id, base_id, table_id, name, url, secret, events, field_ids, condition, kind, template, active, created_at";
+  "id, base_id, table_id, name, url, secret, events, field_ids, condition, kind, template, config, active, created_at";
 
 // ─── The owner's side ───────────────────────────────────────────────────────
 
@@ -61,13 +63,14 @@ export async function createWebhook(
   baseId: string,
   input: {
     name: string;
-    url: string;
+    url?: string | null;
     tableId?: string | null;
     events: WebhookEvent[];
     fieldIds?: string[];
     condition?: FilterNode | null;
     kind?: WebhookKind;
     template?: string | null;
+    config?: Record<string, unknown>;
   }
 ): Promise<Webhook> {
   const { data, error } = await createClient()
@@ -75,13 +78,14 @@ export async function createWebhook(
     .insert({
       base_id: baseId,
       name: input.name,
-      url: input.url,
+      url: input.url ?? null,
       table_id: input.tableId ?? null,
       events: input.events,
       field_ids: input.fieldIds ?? [],
       condition: input.condition ?? null,
       kind: input.kind ?? "generic",
       template: input.template ?? null,
+      config: input.config ?? {},
     })
     .select(COLUMNS)
     .single();
@@ -99,6 +103,7 @@ export async function updateWebhook(id: string, patch: Row): Promise<Webhook> {
   if ("condition" in patch) row.condition = patch.condition;
   if ("kind" in patch) row.kind = patch.kind;
   if ("template" in patch) row.template = patch.template;
+  if ("config" in patch) row.config = patch.config;
   if ("active" in patch) row.active = patch.active;
 
   const { data, error } = await createClient()
@@ -170,6 +175,101 @@ interface Claimed {
   attempts: number;
 }
 
+/** What a delivery needs to know about its webhook to go out. */
+export interface DeliveryTarget {
+  url: string | null;
+  secret: string;
+  kind: WebhookKind;
+  template: string | null;
+  config: Record<string, unknown>;
+}
+
+export interface DeliveryOutcome {
+  ok: boolean;
+  /** Permanent — do not retry (SSRF refusal, missing recipient, bad protocol). */
+  refused?: boolean;
+  responseStatus?: number;
+  /** A 2 KB snippet for the log, never headers. */
+  responseBody?: string;
+  error?: string;
+}
+
+/**
+ * Send ONE delivery, whatever its kind. The single send path — the cron
+ * dispatcher and the owner's "test" button both come through here, which is
+ * what makes the test button honest: it cannot drift from production because
+ * it IS production.
+ */
+export async function deliverOne(
+  hook: DeliveryTarget,
+  event: string,
+  deliveryId: string,
+  payload: Row
+): Promise<DeliveryOutcome> {
+  // email has no URL — it goes through the app's sender. Best-effort by the
+  // sender's own contract (no RESEND_API_KEY ⇒ skipped, reported as an error
+  // here so the log says WHY nothing arrived).
+  if (hook.kind === "email") {
+    const to = typeof hook.config.to === "string" ? hook.config.to : "";
+    if (!to) return { ok: false, refused: true, error: "email webhook has no recipient" };
+
+    const { subject, text } = emailContent(hook.template, payload);
+    const result = await sendEmail({
+      to,
+      subject,
+      text,
+      html: `<pre style="font-family:inherit;white-space:pre-wrap">${text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")}</pre>`,
+    });
+
+    if (result.ok) return { ok: true, responseStatus: 200 };
+    return {
+      ok: false,
+      error: "skipped" in result && result.skipped ? "email is not configured (RESEND_API_KEY)" : "email send failed",
+    };
+  }
+
+  if (!hook.url) return { ok: false, refused: true, error: "webhook has no URL" };
+
+  // The body depends on the target: a generic webhook gets Swamp's signed
+  // envelope; the chat kinds get their own tiny shape, built from the same
+  // payload. The signature is computed over whatever actually goes on the
+  // wire, so a generic receiver can still verify it.
+  const body = buildDeliveryBody(hook.kind, hook.template, payload);
+  const timestamp = Math.floor(Date.now() / 1000).toString();
+
+  try {
+    // safeFetch pins the connection to a validated public IP (a 302 to
+    // 169.254.169.254 is reported, not chased — maxRedirects 0) and caps the
+    // body it reads; we keep only a 2 KB snippet for the log.
+    const res = await safeFetch(hook.url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "User-Agent": "swamp-webhooks/1",
+        "X-Swamp-Event": event,
+        "X-Swamp-Delivery": deliveryId, // the idempotency key. Receivers: use it.
+        "X-Swamp-Timestamp": timestamp,
+        "X-Swamp-Signature": sign(hook.secret, timestamp, body),
+      },
+      body,
+      timeoutMs: TIMEOUT_MS,
+      maxRedirects: 0,
+      maxBytes: 64 * 1024,
+      truncate: true,
+    });
+
+    const text = new TextDecoder().decode(res.buf).slice(0, 2000);
+    return { ok: res.ok, responseStatus: res.status, responseBody: text };
+  } catch (e) {
+    if (e instanceof SafeFetchError && e.refused) {
+      return { ok: false, refused: true, error: e.message };
+    }
+    return { ok: false, error: (e as Error).message || "delivery failed" };
+  }
+}
+
 /**
  * Deliver what's due.
  *
@@ -218,18 +318,19 @@ export async function dispatchPending(
 
   const { data: hooks } = await db
     .from("webhooks")
-    .select("id, url, secret, active, kind, template")
+    .select("id, url, secret, active, kind, template, config")
     .in("id", [...new Set(batch.map((d) => d.webhook_id))]);
 
   const byId = new Map(
     (hooks ?? []).map((h) => [
       h.id as string,
       {
-        url: h.url as string,
+        url: (h.url as string) ?? null,
         secret: h.secret as string,
         active: !!h.active,
         kind: ((h.kind as WebhookKind) ?? "generic"),
         template: (h.template as string) ?? null,
+        config: (h.config as Record<string, unknown>) ?? {},
       },
     ])
   );
@@ -255,74 +356,38 @@ export async function dispatchPending(
         return settle({ status: "dead", error: "webhook is inactive or deleted" });
       }
 
-      // The body depends on the target: a generic webhook gets Swamp's signed
-      // envelope; Slack and Discord get their own tiny shape, built from the same
-      // payload. The signature is computed over whatever actually goes on the
-      // wire, so a generic receiver can still verify it.
-      const body = buildDeliveryBody(hook.kind, hook.template, d.payload);
-      const timestamp = Math.floor(Date.now() / 1000).toString();
+      const out = await deliverOne(hook, d.event, d.id, d.payload);
 
-      try {
-        // safeFetch pins the connection to a validated public IP (a 302 to
-        // 169.254.169.254 is reported, not chased — maxRedirects 0) and caps the
-        // body it reads; we keep only a 2 KB snippet for the log.
-        const res = await safeFetch(hook.url, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "User-Agent": "swamp-webhooks/1",
-            "X-Swamp-Event": d.event,
-            "X-Swamp-Delivery": d.id, // the idempotency key. Receivers: use it.
-            "X-Swamp-Timestamp": timestamp,
-            "X-Swamp-Signature": sign(hook.secret, timestamp, body),
-          },
-          body,
-          timeoutMs: TIMEOUT_MS,
-          maxRedirects: 0,
-          maxBytes: 64 * 1024,
-          truncate: true,
-        });
-
-        const text = new TextDecoder().decode(res.buf).slice(0, 2000);
-
-        if (res.ok) {
-          delivered++;
-          return settle({ status: "success", response_status: res.status, response_body: text, error: null });
-        }
-
-        if (attempts >= MAX_ATTEMPTS) {
-          dead++;
-          return settle({ status: "dead", response_status: res.status, response_body: text });
-        }
-
-        failed++;
+      if (out.ok) {
+        delivered++;
         return settle({
-          status: "pending",
-          response_status: res.status,
-          response_body: text,
-          next_attempt_at: new Date(Date.now() + backoffMs(attempts)).toISOString(),
-        });
-      } catch (e) {
-        // A safety refusal (private address, bad protocol, redirect loop) is
-        // permanent — mark dead, don't retry. A timeout or reset is transient.
-        if (e instanceof SafeFetchError && e.refused) {
-          dead++;
-          return settle({ status: "dead", error: e.message });
-        }
-
-        const message = (e as Error).message || "delivery failed";
-        if (attempts >= MAX_ATTEMPTS) {
-          dead++;
-          return settle({ status: "dead", error: message });
-        }
-
-        failed++;
-        return settle({
-          status: "pending",
-          error: message,
-          next_attempt_at: new Date(Date.now() + backoffMs(attempts)).toISOString(),
+          status: "success",
+          response_status: out.responseStatus ?? null,
+          response_body: out.responseBody ?? null,
+          error: null,
         });
       }
+
+      // A safety refusal (private address, bad protocol, missing recipient) is
+      // permanent — mark dead, don't retry. A timeout or a 500 is transient.
+      if (out.refused || attempts >= MAX_ATTEMPTS) {
+        dead++;
+        return settle({
+          status: "dead",
+          response_status: out.responseStatus ?? null,
+          response_body: out.responseBody ?? null,
+          error: out.error ?? null,
+        });
+      }
+
+      failed++;
+      return settle({
+        status: "pending",
+        response_status: out.responseStatus ?? null,
+        response_body: out.responseBody ?? null,
+        error: out.error ?? null,
+        next_attempt_at: new Date(Date.now() + backoffMs(attempts)).toISOString(),
+      });
     })
   );
 

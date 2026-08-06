@@ -3,132 +3,231 @@
 @tailwind utilities;
 
 /* ─────────────────────────────────────────────────────────────────────────
-   Webhook Manager — ChatGPT-inspired neutral theme.
-   True-neutral grays (no hue) at ChatGPT's lightness values. Primary is
-   near-white on dark / near-black on light. Status + chart colors stay, since
-   they carry meaning. HSL triplets so shadcn `hsl(var(--token))` resolves.
+   SWAMP design tokens — NocoDB's token architecture, SWAMP's branding.
+
+   Three layers, exactly like NocoDB's Figma-derived variables.css:
+
+     1. REFERENCE SCALES  --swamp-<family>-<step>   9 families × 11 steps,
+        HSL triples so `hsl(var(--token) / alpha)` works everywhere.
+        `brand` IS NocoDB's green family — its green-700 (142 70% 30%) is
+        SWAMP's moss green to within a rounding error. Dark mode swaps the
+        scales; everything above resolves lazily, so the semantic and shadcn
+        layers are defined ONCE.
+
+     2. SEMANTIC LAYER    --swamp-content-* / --swamp-bg-* / --swamp-border-*
+        NocoDB's naming, for feature code that wants meaning, not a step.
+
+     3. SHADCN TOKENS     --background, --primary, … — redefined in terms of
+        the scales, so every existing component re-skins with zero edits.
+
+   NocoDB's dark green sheet has duplicate steps (400=500) and a swapped
+   700/800; ported in lightness order so the ramp stays monotonic.
    ───────────────────────────────────────────────────────────────────────── */
 
 @layer base {
   :root {
-    /* ── light: white canvas, soft gray sidebar (like ChatGPT light) ── */
+    /* brand */
+    --swamp-brand-20: 142 100% 98%;  --swamp-brand-50: 139 100% 96%;
+    --swamp-brand-100: 141 69% 90%;  --swamp-brand-200: 141 69% 80%;
+    --swamp-brand-300: 142 68% 70%;  --swamp-brand-400: 141 68% 60%;
+    --swamp-brand-500: 141 69% 50%;  --swamp-brand-600: 141 69% 40%;
+    --swamp-brand-700: 142 70% 30%;  --swamp-brand-800: 141 69% 20%;
+    --swamp-brand-900: 141 69% 10%;
+    /* gray */
+    --swamp-gray-20: 0 0% 99%;  --swamp-gray-50: 240 9% 98%;
+    --swamp-gray-100: 240 5% 96%;  --swamp-gray-200: 240 4% 91%;
+    --swamp-gray-300: 240 5% 84%;  --swamp-gray-400: 217 12% 65%;
+    --swamp-gray-500: 224 11% 47%;  --swamp-gray-600: 224 17% 35%;
+    --swamp-gray-700: 217 19% 27%;  --swamp-gray-800: 218 30% 17%;
+    --swamp-gray-900: 240 14% 7%;
+    /* red */
+    --swamp-red-20: 7 100% 98%;  --swamp-red-50: 4 100% 97%;
+    --swamp-red-100: 3 100% 93%;  --swamp-red-200: 4 100% 85%;
+    --swamp-red-300: 3 100% 77%;  --swamp-red-400: 4 100% 70%;
+    --swamp-red-500: 3 100% 62%;  --swamp-red-600: 3 79% 57%;
+    --swamp-red-700: 4 59% 50%;  --swamp-red-800: 4 58% 44%;
+    --swamp-red-900: 4 58% 31%;
+    /* orange */
+    --swamp-orange-20: 27 100% 98%;  --swamp-orange-50: 23 100% 97%;
+    --swamp-orange-100: 24 95% 92%;  --swamp-orange-200: 24 95% 84%;
+    --swamp-orange-300: 24 95% 75%;  --swamp-orange-400: 24 95% 67%;
+    --swamp-orange-500: 24 95% 59%;  --swamp-orange-600: 24 75% 53%;
+    --swamp-orange-700: 24 67% 47%;  --swamp-orange-800: 24 68% 35%;
+    --swamp-orange-900: 24 67% 18%;
+    /* yellow */
+    --swamp-yellow-20: 38 100% 98%;  --swamp-yellow-50: 42 100% 97%;
+    --swamp-yellow-100: 40 100% 91%;  --swamp-yellow-200: 41 98% 84%;
+    --swamp-yellow-300: 41 97% 76%;  --swamp-yellow-400: 41 98% 69%;
+    --swamp-yellow-500: 41 97% 61%;  --swamp-yellow-600: 41 63% 49%;
+    --swamp-yellow-700: 41 62% 36%;  --swamp-yellow-800: 41 63% 24%;
+    --swamp-yellow-900: 41 61% 12%;
+    /* blue */
+    --swamp-blue-20: 207 100% 98%;  --swamp-blue-50: 200 100% 96%;
+    --swamp-blue-100: 200 100% 92%;  --swamp-blue-200: 200 100% 84%;
+    --swamp-blue-300: 199 100% 76%;  --swamp-blue-400: 199 100% 68%;
+    --swamp-blue-500: 199 100% 61%;  --swamp-blue-600: 199 65% 48%;
+    --swamp-blue-700: 199 65% 36%;  --swamp-blue-800: 200 65% 24%;
+    --swamp-blue-900: 200 65% 12%;
+    /* purple */
+    --swamp-purple-20: 266 64% 98%;  --swamp-purple-50: 270 58% 95%;
+    --swamp-purple-100: 271 62% 90%;  --swamp-purple-200: 271 63% 79%;
+    --swamp-purple-300: 271 62% 69%;  --swamp-purple-400: 271 63% 58%;
+    --swamp-purple-500: 271 69% 48%;  --swamp-purple-600: 271 69% 38%;
+    --swamp-purple-700: 271 68% 29%;  --swamp-purple-800: 271 69% 19%;
+    --swamp-purple-900: 271 67% 10%;
+    /* pink */
+    --swamp-pink-20: 313 100% 98%;  --swamp-pink-50: 314 100% 97%;
+    --swamp-pink-100: 316 95% 92%;  --swamp-pink-200: 317 98% 84%;
+    --swamp-pink-300: 317 97% 76%;  --swamp-pink-400: 317 98% 69%;
+    --swamp-pink-500: 317 97% 61%;  --swamp-pink-600: 317 63% 49%;
+    --swamp-pink-700: 317 62% 36%;  --swamp-pink-800: 317 63% 24%;
+    --swamp-pink-900: 316 61% 12%;
+    /* maroon */
+    --swamp-maroon-20: 327 100% 98%;  --swamp-maroon-50: 332 100% 97%;
+    --swamp-maroon-100: 332 100% 93%;  --swamp-maroon-200: 332 100% 84%;
+    --swamp-maroon-300: 332 74% 71%;  --swamp-maroon-400: 332 59% 59%;
+    --swamp-maroon-500: 332 53% 46%;  --swamp-maroon-600: 332 62% 38%;
+    --swamp-maroon-700: 332 78% 28%;  --swamp-maroon-800: 332 87% 22%;
+    --swamp-maroon-900: 332 100% 13%;
+
+    /* ── theme-asymmetric anchors (light) ── */
     --background: 0 0% 100%;
-    --foreground: 0 0% 9%;
     --card: 0 0% 100%;
-    --card-foreground: 0 0% 9%;
     --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 9%;
-
-    /* neutral primary = near-black button (ChatGPT's dark send button) */
-    --primary: 0 0% 9%;
-    --primary-foreground: 0 0% 98%;
-    /* brand = SWAMP's deep moss green with an electric edge. The single accent.
-       Chromatic (hue 130) and distinct from --success (158) so "brand" and
-       "it worked" never read as the same colour. */
-    --brand: 142 60% 30%;
-    --brand-foreground: 0 0% 98%;
-
-    --secondary: 0 0% 94%;
-    --secondary-foreground: 0 0% 12%;
-    --muted: 0 0% 96%;
-    --muted-foreground: 0 0% 40%;
-    --accent: 0 0% 93%;
-    --accent-foreground: 0 0% 12%;
-
-    --destructive: 0 72% 48%;
+    --primary: var(--swamp-brand-700);
+    --primary-foreground: 0 0% 100%;
+    --brand: var(--swamp-brand-700);
+    --brand-foreground: 0 0% 100%;
+    --destructive: var(--swamp-red-600);
     --destructive-foreground: 0 0% 100%;
-    --success: 158 64% 34%;
+    --ring: var(--swamp-brand-600);
 
-    --border: 0 0% 89%;
-    --input: 0 0% 85%;
-    /* focus rings carry the brand accent */
-    --ring: 142 60% 30%;
-    --radius: 0.75rem;
+    /* ── theme-symmetric shadcn tokens — defined once; the .dark scale swap
+       re-resolves them because var() lookups happen at use time ── */
+    --foreground: var(--swamp-gray-800);
+    --card-foreground: var(--swamp-gray-800);
+    --popover-foreground: var(--swamp-gray-800);
+    --secondary: var(--swamp-gray-100);
+    --secondary-foreground: var(--swamp-gray-800);
+    --muted: var(--swamp-gray-100);
+    --muted-foreground: var(--swamp-gray-500);
+    --accent: var(--swamp-gray-100);
+    --accent-foreground: var(--swamp-gray-800);
+    --success: var(--swamp-brand-600);
+    --border: var(--swamp-gray-200);
+    --input: var(--swamp-gray-300);
+    --radius: 0.5rem;
 
-    /* chart palette (categorical — kept for readability) */
-    --chart-1: 39 90% 50%;
-    --chart-2: 172 66% 38%;
-    --chart-3: 205 82% 50%;
-    --chart-4: 342 74% 56%;
-    --chart-5: 255 58% 60%;
+    /* categorical charts, straight off the scales */
+    --chart-1: var(--swamp-yellow-500);
+    --chart-2: var(--swamp-blue-500);
+    --chart-3: var(--swamp-purple-400);
+    --chart-4: var(--swamp-maroon-500);
+    --chart-5: var(--swamp-orange-500);
 
-    /* sidebar rail — ChatGPT's #f9f9f9 */
-    --sidebar-background: 0 0% 97.5%;
-    --sidebar-foreground: 0 0% 25%;
-    --sidebar-primary: 0 0% 9%;
-    --sidebar-primary-foreground: 0 0% 98%;
-    --sidebar-accent: 0 0% 92%;
-    --sidebar-accent-foreground: 0 0% 10%;
-    --sidebar-border: 0 0% 90%;
-    --sidebar-ring: 142 60% 30%;
+    /* sidebar rail */
+    --sidebar-background: var(--swamp-gray-50);
+    --sidebar-foreground: var(--swamp-gray-600);
+    --sidebar-primary: var(--primary);
+    --sidebar-primary-foreground: var(--primary-foreground);
+    --sidebar-accent: var(--swamp-gray-200);
+    --sidebar-accent-foreground: var(--swamp-gray-800);
+    --sidebar-border: var(--swamp-gray-200);
+    --sidebar-ring: var(--ring);
 
-    /* ── categorical status palette (select / status / kanban) — light ── */
-    --c-amber-bg: #fbecc9;   --c-amber-fg: #8a5600;
-    --c-violet-bg: #ebe6fb;  --c-violet-fg: #5a3ec2;
-    --c-teal-bg: #d3f2ec;    --c-teal-fg: #0c7268;
-    --c-rose-bg: #fbdfe8;    --c-rose-fg: #b23561;
-    --c-sky-bg: #dbebfb;     --c-sky-fg: #1a6aa8;
-    --c-lime-bg: #e9f3d0;    --c-lime-fg: #556d16;
-    --c-orange-bg: #fbe4d1;  --c-orange-fg: #a4501c;
-    --c-fuchsia-bg: #f6dcf6; --c-fuchsia-fg: #973a9c;
+    /* ── semantic layer (NocoDB shape) — for feature code ── */
+    --swamp-content-emphasis: var(--swamp-gray-900);
+    --swamp-content: var(--swamp-gray-800);
+    --swamp-content-subtle: var(--swamp-gray-700);
+    --swamp-content-muted: var(--swamp-gray-500);
+    --swamp-content-disabled: var(--swamp-gray-400);
+    --swamp-content-brand: var(--swamp-brand-600);
+    --swamp-bg-light: var(--swamp-gray-50);
+    --swamp-bg-medium: var(--swamp-gray-100);
+    --swamp-bg-dark: var(--swamp-gray-200);
+    --swamp-bg-brand: var(--swamp-brand-50);
+    --swamp-border-light: var(--swamp-gray-100);
+    --swamp-border: var(--swamp-gray-200);
+    --swamp-border-dark: var(--swamp-gray-300);
+    --swamp-border-brand: var(--swamp-brand-500);
   }
 
   .dark {
-    /* ── dark: ChatGPT #212121 canvas, #171717 sidebar ── */
-    --background: 0 0% 13%;
-    --foreground: 0 0% 93%;
-    --card: 0 0% 17%;
-    --card-foreground: 0 0% 93%;
-    --popover: 0 0% 18%;
-    --popover-foreground: 0 0% 93%;
+    /* brand */
+    --swamp-brand-20: 106 32% 10%;  --swamp-brand-50: 143 80% 10%;
+    --swamp-brand-100: 143 59% 20%;  --swamp-brand-200: 142 70% 29%;
+    --swamp-brand-300: 141 75% 36%;  --swamp-brand-400: 141 69% 50%;
+    --swamp-brand-500: 141 69% 50%;  --swamp-brand-600: 141 75% 73%;
+    --swamp-brand-700: 140 76% 85%;  --swamp-brand-800: 141 84% 93%;
+    --swamp-brand-900: 142 100% 98%;
+    /* gray */
+    --swamp-gray-20: 240 12% 5%;  --swamp-gray-50: 240 3% 12%;
+    --swamp-gray-100: 210 5% 17%;  --swamp-gray-200: 216 4% 24%;
+    --swamp-gray-300: 223 4% 33%;  --swamp-gray-400: 220 4% 44%;
+    --swamp-gray-500: 222 7% 62%;  --swamp-gray-600: 219 17% 81%;
+    --swamp-gray-700: 218 29% 87%;  --swamp-gray-800: 219 53% 93%;
+    --swamp-gray-900: 219 83% 95%;
+    /* red */
+    --swamp-red-20: 352 40% 12%;  --swamp-red-50: 3 90% 15%;
+    --swamp-red-100: 4 74% 31%;  --swamp-red-200: 4 83% 35%;
+    --swamp-red-300: 4 88% 42%;  --swamp-red-400: 3 100% 62%;
+    --swamp-red-500: 3 100% 70%;  --swamp-red-600: 4 100% 81%;
+    --swamp-red-700: 3 100% 89%;  --swamp-red-800: 4 100% 94%;
+    --swamp-red-900: 4 100% 97%;
+    /* orange */
+    --swamp-orange-20: 26 41% 12%;  --swamp-orange-50: 10 81% 15%;
+    --swamp-orange-100: 12 75% 28%;  --swamp-orange-200: 12 78% 34%;
+    --swamp-orange-300: 14 87% 40%;  --swamp-orange-400: 22 94% 53%;
+    --swamp-orange-500: 24 95% 59%;  --swamp-orange-600: 28 96% 72%;
+    --swamp-orange-700: 29 98% 83%;  --swamp-orange-800: 31 100% 92%;
+    --swamp-orange-900: 30 100% 96%;
+    /* yellow */
+    --swamp-yellow-20: 37 43% 12%;  --swamp-yellow-50: 15 92% 14%;
+    --swamp-yellow-100: 17 78% 26%;  --swamp-yellow-200: 21 90% 37%;
+    --swamp-yellow-300: 27 95% 44%;  --swamp-yellow-400: 33 92% 50%;
+    --swamp-yellow-500: 38 96% 56%;  --swamp-yellow-600: 41 97% 61%;
+    --swamp-yellow-700: 43 97% 77%;  --swamp-yellow-800: 43 96% 89%;
+    --swamp-yellow-900: 42 100% 96%;
+    /* blue */
+    --swamp-blue-20: 211 38% 11%;  --swamp-blue-50: 205 85% 16%;
+    --swamp-blue-100: 202 97% 27%;  --swamp-blue-200: 202 100% 33%;
+    --swamp-blue-300: 202 100% 40%;  --swamp-blue-400: 199 95% 48%;
+    --swamp-blue-500: 199 100% 61%;  --swamp-blue-600: 200 100% 74%;
+    --swamp-blue-700: 201 100% 86%;  --swamp-blue-800: 204 100% 94%;
+    --swamp-blue-900: 202 100% 97%;
+    /* purple */
+    --swamp-purple-20: 269 68% 7%;  --swamp-purple-50: 273 83% 21%;
+    --swamp-purple-100: 273 63% 32%;  --swamp-purple-200: 272 64% 39%;
+    --swamp-purple-300: 271 78% 56%;  --swamp-purple-400: 270 88% 65%;
+    --swamp-purple-500: 269 92% 75%;  --swamp-purple-600: 268 92% 85%;
+    --swamp-purple-700: 267 95% 92%;  --swamp-purple-800: 269 100% 95%;
+    --swamp-purple-900: 270 100% 98%;
+    /* pink */
+    --swamp-pink-20: 321 36% 11%;  --swamp-pink-50: 322 100% 17%;
+    --swamp-pink-100: 322 82% 30%;  --swamp-pink-200: 322 89% 35%;
+    --swamp-pink-300: 322 93% 42%;  --swamp-pink-400: 317 97% 61%;
+    --swamp-pink-500: 314 100% 70%;  --swamp-pink-600: 313 100% 81%;
+    --swamp-pink-700: 312 100% 90%;  --swamp-pink-800: 312 93% 95%;
+    --swamp-pink-900: 314 87% 97%;
+    /* maroon */
+    --swamp-maroon-20: 331 41% 12%;  --swamp-maroon-50: 333 56% 17%;
+    --swamp-maroon-100: 333 47% 30%;  --swamp-maroon-200: 332 53% 46%;
+    --swamp-maroon-300: 330 48% 51%;  --swamp-maroon-400: 327 55% 60%;
+    --swamp-maroon-500: 325 58% 70%;  --swamp-maroon-600: 324 59% 82%;
+    --swamp-maroon-700: 322 58% 90%;  --swamp-maroon-800: 322 58% 90%;
+    --swamp-maroon-900: 326 47% 97%;
 
-    /* neutral primary = near-white button (ChatGPT's light send button) */
-    --primary: 0 0% 96%;
-    --primary-foreground: 0 0% 12%;
-    /* brand lifts to an electric moss on the dark canvas; near-black foreground
-       for legible text on the bright accent. */
-    --brand: 142 69% 58%;
-    --brand-foreground: 142 45% 9%;
-
-    --secondary: 0 0% 18%;
-    --secondary-foreground: 0 0% 92%;
-    --muted: 0 0% 17%;
-    --muted-foreground: 0 0% 64%;
-    --accent: 0 0% 20%;
-    --accent-foreground: 0 0% 95%;
-
-    --destructive: 0 62% 52%;
-    --destructive-foreground: 0 0% 98%;
-    --success: 158 58% 52%;
-
-    --border: 0 0% 24%;
-    --input: 0 0% 26%;
-    --ring: 142 69% 58%;
-
-    --chart-1: 39 90% 58%;
-    --chart-2: 172 60% 50%;
-    --chart-3: 205 82% 62%;
-    --chart-4: 342 76% 68%;
-    --chart-5: 255 66% 72%;
-
-    --sidebar-background: 0 0% 9%;
-    --sidebar-foreground: 0 0% 80%;
-    --sidebar-primary: 0 0% 96%;
-    --sidebar-primary-foreground: 0 0% 12%;
-    --sidebar-accent: 0 0% 18%;
-    --sidebar-accent-foreground: 0 0% 96%;
-    --sidebar-border: 0 0% 16%;
-    --sidebar-ring: 142 69% 58%;
-
-    /* ── categorical status palette — dark ── */
-    --c-amber-bg: #3a2c10;   --c-amber-fg: #f2b544;
-    --c-violet-bg: #2a2140;  --c-violet-fg: #b9a3f5;
-    --c-teal-bg: #10322f;    --c-teal-fg: #5fd4c4;
-    --c-rose-bg: #3c1a26;    --c-rose-fg: #f08cab;
-    --c-sky-bg: #122a3d;     --c-sky-fg: #7cc1f0;
-    --c-lime-bg: #24310f;    --c-lime-fg: #b8d95c;
-    --c-orange-bg: #3b2311;  --c-orange-fg: #f0a05c;
-    --c-fuchsia-bg: #35163a; --c-fuchsia-fg: #e08cf0;
+    /* ── theme-asymmetric anchors (dark) ── */
+    --background: 0 0% 7%;
+    --card: var(--swamp-gray-50);
+    --popover: var(--swamp-gray-100);
+    --primary: var(--swamp-brand-400);
+    --primary-foreground: var(--swamp-brand-20);
+    --brand: var(--swamp-brand-400);
+    --brand-foreground: var(--swamp-brand-20);
+    --destructive: var(--swamp-red-400);
+    --destructive-foreground: 0 0% 100%;
+    --ring: var(--swamp-brand-400);
   }
 }
 
@@ -202,47 +301,46 @@
 
 /* ── inverted section band ──
    A full-width section that reads as the OPPOSITE of the current theme. It swaps
-   the theme's colour tokens within its own scope, so everything inside (headings,
-   body, borders, badges — anything using bg-background / text-foreground / muted /
-   border) flips with it. In light mode the band is black; in dark mode it's white.
-   Used to alternate section bands down the page. */
+   the theme's colour tokens within its own scope, so everything inside flips
+   with it. Values are the other theme's anchors, hardcoded because var() cannot
+   reach across the theme switch. */
 .section-invert {
-  --background: 0 0% 13%;
-  --foreground: 0 0% 93%;
-  --card: 0 0% 17%;
-  --card-foreground: 0 0% 93%;
-  --popover: 0 0% 18%;
-  --popover-foreground: 0 0% 93%;
-  --primary: 0 0% 96%;
-  --primary-foreground: 0 0% 12%;
-  --secondary: 0 0% 18%;
-  --secondary-foreground: 0 0% 92%;
-  --muted: 0 0% 17%;
-  --muted-foreground: 0 0% 64%;
-  --accent: 0 0% 20%;
-  --accent-foreground: 0 0% 95%;
-  --border: 0 0% 24%;
-  --input: 0 0% 26%;
-  --ring: 0 0% 64%;
+  --background: 0 0% 7%;
+  --foreground: 219 42% 92%;
+  --card: 240 4% 12%;
+  --card-foreground: 219 42% 92%;
+  --popover: 210 2% 17%;
+  --popover-foreground: 219 42% 92%;
+  --primary: 141 68% 60%;
+  --primary-foreground: 142 100% 98%;
+  --secondary: 210 2% 17%;
+  --secondary-foreground: 219 42% 92%;
+  --muted: 210 2% 17%;
+  --muted-foreground: 220 7% 62%;
+  --accent: 220 4% 24%;
+  --accent-foreground: 219 42% 92%;
+  --border: 220 4% 24%;
+  --input: 216 4% 33%;
+  --ring: 141 68% 60%;
 }
 .dark .section-invert {
   --background: 0 0% 100%;
-  --foreground: 0 0% 9%;
+  --foreground: 218 30% 17%;
   --card: 0 0% 100%;
-  --card-foreground: 0 0% 9%;
+  --card-foreground: 218 30% 17%;
   --popover: 0 0% 100%;
-  --popover-foreground: 0 0% 9%;
-  --primary: 0 0% 9%;
-  --primary-foreground: 0 0% 98%;
-  --secondary: 0 0% 94%;
-  --secondary-foreground: 0 0% 12%;
-  --muted: 0 0% 96%;
-  --muted-foreground: 0 0% 40%;
-  --accent: 0 0% 93%;
-  --accent-foreground: 0 0% 12%;
-  --border: 0 0% 89%;
-  --input: 0 0% 85%;
-  --ring: 0 0% 45%;
+  --popover-foreground: 218 30% 17%;
+  --primary: 142 70% 30%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 240 4% 96%;
+  --secondary-foreground: 218 30% 17%;
+  --muted: 240 4% 96%;
+  --muted-foreground: 227 11% 47%;
+  --accent: 240 4% 96%;
+  --accent-foreground: 218 30% 17%;
+  --border: 240 4% 91%;
+  --input: 240 5% 84%;
+  --ring: 141 69% 40%;
 }
 
 /* ── SWAMP mark ── draws its links in on mount. Keying the element on a state

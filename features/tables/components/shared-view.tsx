@@ -5,11 +5,18 @@ import { Download, Loader2, Lock, Search } from "lucide-react";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 import { cn } from "@/shared/lib/utils";
+import dynamic from "next/dynamic";
 import type { SharedMeta } from "../sharing";
 import type { Cursor, Record_ } from "../types";
 import { CellView } from "./cell";
 import { FormRuntime } from "./form-runtime";
 import { Gallery } from "./gallery";
+import { Kanban } from "./kanban";
+import { Calendar } from "./calendar";
+import { ListView } from "./list";
+import { Timeline } from "./timeline";
+
+const MapView = dynamic(() => import("./map-view"), { ssr: false });
 
 // The public face of a shared view.
 //
@@ -92,7 +99,93 @@ function SharedRecords({
 
   const allowDownload = meta.view.shareOptions?.allowDownload;
 
+  // ── The hidden-field guard ──
+  //
+  // `meta.fields` is the ALLOW-LIST: hidden fields are ABSENT, not flagged (see
+  // swamp_shared_meta). So a kanban whose stack field is hidden, or a calendar
+  // whose date field is, must fall back to the table honestly rather than crash
+  // on a field it cannot see. `byId` resolves config ids against what the share
+  // actually exposes; a miss means "render as a table".
+  const byId = new Map(meta.fields.map((f) => [f.id, f]));
+  const config = meta.view.config ?? {};
+  const stackField = config.stackFieldId ? byId.get(config.stackFieldId) : undefined;
+  const dateField = config.ranges?.[0]?.fromFieldId
+    ? byId.get(config.ranges[0].fromFieldId)
+    : meta.fields.find((f) => f.type === "date" || f.type === "datetime");
+  const toField = config.ranges?.[0]?.toFieldId
+    ? byId.get(config.ranges[0].toFieldId)
+    : undefined;
+  const coordField = config.coordFieldId
+    ? byId.get(config.coordFieldId)
+    : meta.fields.find((f) => f.type === "coordinates");
+
+  const noop = () => {};
+  let body: React.ReactNode = null;
+
   if (meta.view.type === "gallery") {
+    body = (
+      <Gallery
+        fields={meta.fields}
+        hidden={new Set()}
+        records={records}
+        coverField={meta.fields.find((f) => f.type === "image")}
+        onExpand={noop}
+      />
+    );
+  } else if (meta.view.type === "kanban" && stackField) {
+    body = (
+      <Kanban
+        fields={meta.fields}
+        hidden={new Set()}
+        records={records}
+        stackField={stackField}
+        collapsed={new Set()}
+        onCollapsedChange={noop}
+        onUpdateCell={noop}
+        onExpand={noop}
+        onAddRecord={noop}
+      />
+    );
+  } else if (meta.view.type === "calendar" && dateField) {
+    body = (
+      <Calendar
+        fields={meta.fields}
+        records={records}
+        fromField={dateField}
+        onExpand={noop}
+        onSetDate={noop}
+      />
+    );
+  } else if (meta.view.type === "list") {
+    body = (
+      <ListView
+        fields={meta.fields}
+        hidden={new Set()}
+        records={records}
+        onExpand={noop}
+        onLoadMore={loadMore}
+        hasMore={!!cursor}
+        loadingMore={false}
+      />
+    );
+  } else if ((meta.view.type === "timeline" || meta.view.type === "gantt") && dateField) {
+    body = (
+      <Timeline
+        fields={meta.fields}
+        records={records}
+        fromField={dateField}
+        toField={toField}
+        onExpand={noop}
+        onSetDate={noop}
+      />
+    );
+  } else if (meta.view.type === "map" && coordField) {
+    body = (
+      <MapView fields={meta.fields} records={records} coordField={coordField} onExpand={noop} />
+    );
+  }
+
+  if (body) {
     return (
       <main className="flex min-h-screen flex-col">
         <SharedHeader
@@ -102,13 +195,13 @@ function SharedRecords({
           shareId={shareId}
           allowDownload={allowDownload}
         />
-        <Gallery
-          fields={meta.fields}
-          hidden={new Set()}
-          records={records}
-          coverField={meta.fields.find((f) => f.type === "image")}
-          onExpand={() => {}}
-        />
+        {loading ? (
+          <div className="flex h-64 items-center justify-center text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" />
+          </div>
+        ) : (
+          body
+        )}
       </main>
     );
   }

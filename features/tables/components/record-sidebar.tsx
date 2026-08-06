@@ -174,6 +174,90 @@ function Comments({
     setComments((c) => c.filter((x) => x.id !== id));
   };
 
+  // ── Reactions ──
+  //
+  // comment_id -> rows. Loaded with the thread, toggled straight through the
+  // RLS-scoped browser client (insert at commenter, delete own) — the same
+  // trust model as the notifications bell, no route needed.
+  const [reactions, setReactions] = React.useState<
+    Map<string, { userId: string; emoji: string }[]>
+  >(new Map());
+
+  React.useEffect(() => {
+    if (!comments.length) return;
+    let alive = true;
+    void createClient()
+      .from("comment_reactions")
+      .select("comment_id, user_id, emoji")
+      .in("comment_id", comments.map((c) => c.id))
+      .then(({ data }) => {
+        if (!alive || !data) return;
+        const next = new Map<string, { userId: string; emoji: string }[]>();
+        for (const r of data) {
+          const list = next.get(r.comment_id as string) ?? [];
+          list.push({ userId: r.user_id as string, emoji: r.emoji as string });
+          next.set(r.comment_id as string, list);
+        }
+        setReactions(next);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [comments]);
+
+  const toggleReaction = async (comment: Comment, emoji: string) => {
+    if (!currentUserId) return;
+    const mine = (reactions.get(comment.id) ?? []).some(
+      (r) => r.userId === currentUserId && r.emoji === emoji
+    );
+    const db = createClient();
+
+    // Optimistic — a reaction that lags feels broken.
+    setReactions((prev) => {
+      const next = new Map(prev);
+      const list = [...(next.get(comment.id) ?? [])];
+      if (mine) {
+        next.set(
+          comment.id,
+          list.filter((r) => !(r.userId === currentUserId && r.emoji === emoji))
+        );
+      } else {
+        next.set(comment.id, [...list, { userId: currentUserId, emoji }]);
+      }
+      return next;
+    });
+
+    const { error } = mine
+      ? await db
+          .from("comment_reactions")
+          .delete()
+          .eq("comment_id", comment.id)
+          .eq("user_id", currentUserId)
+          .eq("emoji", emoji)
+      : await db.from("comment_reactions").insert({
+          comment_id: comment.id,
+          user_id: currentUserId,
+          base_id: comment.baseId,
+          emoji,
+        });
+
+    // A 403 means viewer role — undo the optimism and say so.
+    if (error) {
+      setReactions((prev) => {
+        const next = new Map(prev);
+        const list = [...(next.get(comment.id) ?? [])];
+        if (mine) next.set(comment.id, [...list, { userId: currentUserId, emoji }]);
+        else
+          next.set(
+            comment.id,
+            list.filter((r) => !(r.userId === currentUserId && r.emoji === emoji))
+          );
+        return next;
+      });
+      toast.error("You need commenter access to react.");
+    }
+  };
+
   return (
     <>
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto p-3">
@@ -266,7 +350,15 @@ function Comments({
                 </div>
               </div>
             ) : (
-              <p className="whitespace-pre-wrap text-[13px]">{stripMentions(c.body)}</p>
+              <>
+                <p className="whitespace-pre-wrap text-[13px]">{stripMentions(c.body)}</p>
+                <Reactions
+                  comment={c}
+                  mine={reactions.get(c.id) ?? []}
+                  currentUserId={currentUserId}
+                  onToggle={toggleReaction}
+                />
+              </>
             )}
 
             {c.resolvedAt && (
@@ -375,6 +467,62 @@ function HistoryList({ recordId, fields }: { recordId: string; fields: Field[] }
               </p>
             ))}
         </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Reactions ──────────────────────────────────────────────────────────────
+
+const REACTION_EMOJIS = ["👍", "❤️", "🎉", "👀"] as const;
+
+function Reactions({
+  comment,
+  mine,
+  currentUserId,
+  onToggle,
+}: {
+  comment: Comment;
+  mine: { userId: string; emoji: string }[];
+  currentUserId: string | null;
+  onToggle: (comment: Comment, emoji: string) => void;
+}) {
+  // Group to chips: emoji -> count, flagged when the current user is in it.
+  const groups = new Map<string, { count: number; mine: boolean }>();
+  for (const r of mine) {
+    const g = groups.get(r.emoji) ?? { count: 0, mine: false };
+    g.count += 1;
+    if (r.userId === currentUserId) g.mine = true;
+    groups.set(r.emoji, g);
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      {[...groups.entries()].map(([emoji, g]) => (
+        <button
+          key={emoji}
+          onClick={() => onToggle(comment, emoji)}
+          className={cn(
+            "flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[11px] tabular-nums",
+            g.mine ? "border-brand/50 bg-brand/10" : "hover:bg-muted/60"
+          )}
+          title={g.mine ? "Remove your reaction" : "React"}
+        >
+          <span>{emoji}</span>
+          <span className="text-muted-foreground">{g.count}</span>
+        </button>
+      ))}
+
+      {/* The fixed set, offered for whatever isn't already a chip. */}
+      {REACTION_EMOJIS.filter((e) => !groups.has(e)).map((emoji) => (
+        <button
+          key={emoji}
+          onClick={() => onToggle(comment, emoji)}
+          className="rounded-full px-1 py-0.5 text-[11px] opacity-0 transition-opacity hover:bg-muted/60 group-hover:opacity-60 [div:hover>&]:opacity-60"
+          title="React"
+        >
+          {emoji}
+        </button>
       ))}
     </div>
   );

@@ -12,13 +12,14 @@ import { SUPABASE_URL } from "./env";
 // with this key.
 //
 // It is legitimate in exactly one situation: a background job with no user
-// session, acting on behalf of the system rather than a person. Two exist:
+// session, acting on behalf of the system rather than a person. These exist:
 //
-//   • /api/sync             — the Google Sheets poller
+//   • /api/cron              — the daily fan-out Vercel actually schedules
+//   • /api/sync              — the Google Sheets poller
 //   • /api/webhooks/dispatch — delivering queued webhooks
 //   • /api/attachments/gc    — deleting orphaned files
 //
-// All three are gated on CRON_SECRET, none of them takes a table id from the
+// All are gated on CRON_SECRET, none of them takes a table id from the
 // caller, and none of them is reachable from a browser. If you find yourself
 // reaching for this key in a route that a user hits, the answer is a SECURITY
 // DEFINER function, not this.

@@ -45,6 +45,9 @@ interface FilterRow {
   op: string | null;
   sub_op: string | null;
   value: unknown;
+  /** Field-to-field comparison: the right-hand side is another field's value.
+   *  The column predates its use — it sat in the schema unread until Phase 4. */
+  value_field_id: string | null;
   sort_order: number;
   enabled: boolean;
 }
@@ -74,11 +77,16 @@ function buildTree(rows: FilterRow[], fieldsById: Map<string, Field>): FilterNod
     const field = row.field_id ? fieldsById.get(row.field_id) : undefined;
     if (!field || !row.op) return null;
 
+    // Same deleted-field rule for the right-hand side: a valueField whose field
+    // is gone degrades to a literal-less leaf rather than an unopenable view.
+    const valueField = row.value_field_id ? fieldsById.get(row.value_field_id) : undefined;
+
     return {
       field: field.key,
       op: row.op as FilterNode extends { op: infer O } ? O : never,
       ...(row.value !== null && row.value !== undefined ? { value: row.value } : {}),
       ...(row.sub_op ? { subOp: row.sub_op } : {}),
+      ...(valueField ? { valueField: valueField.key } : {}),
     } as FilterNode;
   };
 
@@ -201,6 +209,8 @@ export async function saveFilterTree(
     const field = byKey.get(n.field);
     if (!field) return; // a key that isn't a field: drop it, don't persist garbage
 
+    const valueField = n.valueField ? byKey.get(n.valueField) : undefined;
+
     rows.push({
       id,
       base_id: baseId,
@@ -212,6 +222,7 @@ export async function saveFilterTree(
       op: n.op,
       sub_op: n.subOp ?? null,
       value: n.value ?? null,
+      value_field_id: valueField?.id ?? null,
       sort_order: order,
       enabled: true,
     });

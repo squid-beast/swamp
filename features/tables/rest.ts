@@ -309,3 +309,19 @@ export function apiDelete(token: string, tableId: string, ids: string[]): Promis
     p_ids: ids,
   });
 }
+
+/** Column summaries over the filtered set — the token twin of swamp_aggregate.
+ *  Same whitelisted templates; the token is the credential, checked on entry. */
+export function apiAggregate(
+  token: string,
+  tableId: string,
+  spec: QuerySpec,
+  aggregations: Record<string, string>
+): Promise<Record<string, unknown>> {
+  return rpc<Record<string, unknown>>("swamp_api_aggregate", {
+    p_token: token,
+    p_table_id: tableId,
+    p_spec: spec,
+    p_aggs: aggregations,
+  });
+}

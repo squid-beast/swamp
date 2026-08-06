@@ -102,7 +102,7 @@ describe("handshake", () => {
 });
 
 describe("tools/list", () => {
-  it("lists all eight tools with closed input schemas", async () => {
+  it("lists all nine tools with closed input schemas", async () => {
     const res = await call("tools/list");
     const tools = (res as { result: { tools: typeof MCP_TOOLS } }).result.tools;
     expect(tools.map((t) => t.name)).toEqual([
@@ -111,6 +111,7 @@ describe("tools/list", () => {
       "describe_table",
       "count_records",
       "get_record",
+      "aggregate",
       "create_records",
       "update_record",
       "delete_records",

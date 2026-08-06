@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { listInvites, listMembers } from "@/features/tables/collaboration";
 import { MembersPanel } from "@/features/tables/components/members-panel";
+import { BaseShare } from "@/features/tables/components/base-share";
 import { createClient } from "@/shared/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -14,7 +15,7 @@ export default async function MembersPage({ params }: { params: { baseId: string
 
   const { data: base } = await supabase
     .from("bases")
-    .select("id, name")
+    .select("id, name, share_id")
     .eq("id", params.baseId)
     .is("deleted_at", null)
     .maybeSingle();
@@ -29,12 +30,17 @@ export default async function MembersPage({ params }: { params: { baseId: string
   ]);
 
   return (
-    <MembersPanel
-      baseId={base.id}
-      baseName={base.name}
-      members={members}
-      invites={invites}
-      currentUserId={user.id}
-    />
+    <div className="flex flex-col gap-4">
+      <MembersPanel
+        baseId={base.id}
+        baseName={base.name}
+        members={members}
+        invites={invites}
+        currentUserId={user.id}
+      />
+      <div className="px-4 pb-6">
+        <BaseShare baseId={base.id} shareId={(base.share_id as string) ?? null} />
+      </div>
+    </div>
   );
 }

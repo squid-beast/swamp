@@ -55,18 +55,25 @@ const EVENT_LABELS: Record<WebhookEvent, string> = {
 
 const eventLabel = (e: string) => EVENT_LABELS[e as WebhookEvent] ?? e;
 
-// A webhook's target speaks one of three shapes. Generic is Swamp's signed
-// envelope; the other two are the incoming-webhook shapes Slack and Discord want.
+// A webhook's target speaks one of several shapes. Generic is Swamp's signed
+// envelope; the chat kinds are each tool's incoming-webhook shape; email has no
+// URL at all and goes out through the app's sender.
 const KIND_LABELS: Record<WebhookKind, string> = {
   generic: "Generic (signed JSON)",
   slack: "Slack",
   discord: "Discord",
+  teams: "Microsoft Teams",
+  mattermost: "Mattermost",
+  email: "Email",
 };
 
 const KIND_HINTS: Record<WebhookKind, string> = {
   generic: "Our signed { event, record, changes } envelope. Verify X-Swamp-Signature.",
   slack: "Posts { text } to a Slack incoming webhook.",
   discord: "Posts { content } to a Discord webhook.",
+  teams: "Posts an Adaptive Card to a Teams Workflows webhook (the legacy O365 connector is retired).",
+  mattermost: "Posts { text } to a Mattermost incoming webhook.",
+  email: "Sends the message by email. No URL — just a recipient.",
 };
 
 export function WebhooksPanel({
@@ -90,6 +97,8 @@ export function WebhooksPanel({
   ]);
   const [kind, setKind] = React.useState<WebhookKind>("generic");
   const [template, setTemplate] = React.useState("");
+  const [emailTo, setEmailTo] = React.useState("");
+  const [testing, setTesting] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [open, setOpen] = React.useState<string | null>(null);
   const [log, setLog] = React.useState<WebhookDelivery[]>([]);
@@ -131,7 +140,9 @@ export function WebhooksPanel({
     setEvents((s) => (s.includes(e) ? s.filter((x) => x !== e) : [...s, e]));
 
   const create = async () => {
-    if (!name.trim() || !url.trim() || !events.length || busy) return;
+    const isEmail = kind === "email";
+    if (!name.trim() || !events.length || busy) return;
+    if (isEmail ? !emailTo.trim() : !url.trim()) return;
     setBusy(true);
 
     const res = await fetch(`/api/bases/${baseId}/webhooks`, {
@@ -139,7 +150,7 @@ export function WebhooksPanel({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: name.trim(),
-        url: url.trim(),
+        url: isEmail ? null : url.trim(),
         tableId: tableId === ANY ? null : tableId,
         events,
         // Condition and field scope only mean anything against a specific table.
@@ -147,6 +158,7 @@ export function WebhooksPanel({
         ...(tableId !== ANY && fieldIds.length ? { fieldIds } : {}),
         kind,
         template: kind !== "generic" && template.trim() ? template.trim() : null,
+        ...(isEmail ? { config: { to: emailTo.trim() } } : {}),
       }),
     });
 
@@ -159,10 +171,31 @@ export function WebhooksPanel({
 
     setName("");
     setUrl("");
+    setEmailTo("");
     setTemplate("");
     setCondition(null);
     setFieldIds([]);
     await reload();
+  };
+
+  /** Send a synthetic delivery through the REAL send path and report back. */
+  const test = async (id: string) => {
+    if (testing) return;
+    setTesting(id);
+    try {
+      const res = await fetch(`/api/webhooks/${id}/test`, { method: "POST" });
+      const out = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        toast.error(out?.error ?? "Test failed");
+      } else if (out.ok) {
+        toast.success(`Delivered — HTTP ${out.status ?? "OK"}`);
+      } else {
+        toast.error(out.error ? `Failed: ${out.error}` : `Failed — HTTP ${out.status}`);
+      }
+    } finally {
+      setTesting(null);
+    }
   };
 
   const setActive = async (id: string, active: boolean) => {
@@ -217,12 +250,22 @@ export function WebhooksPanel({
             placeholder="Name"
             className="w-48"
           />
-          <Input
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            placeholder="https://example.com/hooks/swamp"
-            className="flex-1"
-          />
+          {kind === "email" ? (
+            <Input
+              value={emailTo}
+              onChange={(e) => setEmailTo(e.target.value)}
+              placeholder="ops@example.com"
+              type="email"
+              className="flex-1"
+            />
+          ) : (
+            <Input
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="https://example.com/hooks/swamp"
+              className="flex-1"
+            />
+          )}
         </div>
 
         <div className="flex items-center gap-2">
@@ -362,14 +405,26 @@ export function WebhooksPanel({
                 <span className="truncate text-[13px]">{w.name}</span>
                 <span className="truncate text-[11px] text-muted-foreground">
                   {w.kind !== "generic" && `${KIND_LABELS[w.kind]} · `}
-                  {w.url} · {w.events.map(eventLabel).join(", ")}
+                  {w.kind === "email" ? String(w.config?.to ?? "") : w.url} ·{" "}
+                  {w.events.map(eventLabel).join(", ")}
                 </span>
               </div>
 
               <Button
                 variant="ghost"
                 size="sm"
-                className="ml-auto h-7 gap-1.5 text-[12px]"
+                className="ml-auto h-7 text-[12px]"
+                onClick={() => test(w.id)}
+                disabled={testing === w.id}
+                data-testid="webhook-test"
+              >
+                {testing === w.id ? "Testing…" : "Test"}
+              </Button>
+
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 gap-1.5 text-[12px]"
                 onClick={() => {
                   void navigator.clipboard.writeText(w.secret);
                   toast.success("Signing secret copied");

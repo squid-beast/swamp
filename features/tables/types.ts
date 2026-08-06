@@ -147,7 +147,52 @@ export const isTemporalField = (t: FieldType) => TEMPORAL.has(t);
 
 // ─── Entities ───────────────────────────────────────────────────────────────
 
-export type Role = "viewer" | "commenter" | "editor" | "creator" | "owner";
+/** The ladder, low to high. `Role` is derived so the two can never disagree. */
+export const ROLE_ORDER = ["viewer", "commenter", "editor", "creator", "owner"] as const;
+
+export type Role = (typeof ROLE_ORDER)[number];
+
+// ─── Permissions ────────────────────────────────────────────────────────────
+//
+// NocoDB's PermissionKey model, minus its read key. All three below are WRITE
+// permissions, and writes have a real choke point: every path that changes a
+// record reaches records.data through an INSERT/UPDATE on public.records, where
+// one trigger catches session, token, form and RPC callers alike.
+//
+// TABLE_VISIBILITY is deliberately absent — it is a READ permission, and the
+// read surface has ~15 paths that bypass the field allow-list. Offering a rule
+// that silently fails to hold is worse than not offering it. See
+// supabase/migrations/20260806000000_permissions_inert.sql.
+export const PERMISSION_KEYS = [
+  "table_record_add",
+  "table_record_delete",
+  "record_field_edit",
+] as const;
+
+export type PermissionKey = (typeof PERMISSION_KEYS)[number];
+
+/** Who a rule admits. `nobody` locks it for everyone, owners included. */
+export const PERMISSION_GRANTS = ["role", "user", "nobody"] as const;
+export type PermissionGrant = (typeof PERMISSION_GRANTS)[number];
+
+export interface Permission {
+  id: string;
+  baseId: string;
+  tableId: string;
+  /** Only ever set for `record_field_edit`. */
+  fieldId: string | null;
+  key: PermissionKey;
+  grantedType: PermissionGrant;
+  /** The minimum rung, when grantedType is "role". */
+  role: Role | null;
+  userIds: string[];
+}
+
+export const PERMISSION_LABEL: Record<PermissionKey, string> = {
+  table_record_add: "Add records",
+  table_record_delete: "Delete or restore records",
+  record_field_edit: "Edit this field",
+};
 
 const ROLE_RANK: Record<Role, number> = {
   viewer: 1,
@@ -198,6 +243,11 @@ export interface FieldOptions {
   currency?: string; // currency
   precision?: number; // currency | number | percent
   max?: number; // rating
+
+  /** longText — render the value as markdown (bold/italic/links/lists/code).
+   *  The stored value stays a plain string, so search, export and the JSONB
+   *  storage model are untouched; rich is a DISPLAY mode, not a format. */
+  rich?: boolean;
 
   /** user — hold several people rather than one. Matches NocoDB's `meta.is_multi`,
    *  which also defaults to single. Off means the cell stores a bare uuid; on means
@@ -298,7 +348,21 @@ export interface Field {
   sortOrder: number;
 }
 
-export type ViewType = "grid" | "gallery" | "kanban" | "form" | "calendar";
+/** Every view type. The single source — the create route's z.enum and the
+ *  swamp_view_type Postgres enum mirror this list. */
+export const VIEW_TYPES = [
+  "grid",
+  "gallery",
+  "kanban",
+  "form",
+  "calendar",
+  "list",
+  "timeline",
+  "gantt",
+  "map",
+] as const;
+
+export type ViewType = (typeof VIEW_TYPES)[number];
 
 /**
  * The permission check for editing a view's config is two-dimensional. Model it
@@ -315,7 +379,18 @@ export interface ViewConfig {
   coverFieldId?: string; // gallery | kanban
   stackFieldId?: string; // kanban
   stacks?: { id: string; title: string; order: number; collapsed: boolean }[];
-  ranges?: { fromFieldId: string; toFieldId?: string }[]; // calendar
+  ranges?: { fromFieldId: string; toFieldId?: string }[]; // calendar | timeline | gantt
+  /** map — the coordinates field to place markers by ("lat,lng" text). */
+  coordFieldId?: string;
+  /** gantt — a self-referential link field whose targets are a bar's
+   *  predecessors. Resolved by the catalog like any link; the view just draws
+   *  arrows between the rows it already has. */
+  dependencyFieldId?: string;
+  /** Conditional row colouring: first matching rule wins, evaluated in SQL by
+   *  swamp_row_colors (the same compiler as filters — never a JS evaluator).
+   *  Takes precedence over colorFieldId. Grid only; NEVER applied on the shared
+   *  path — a rule over a hidden field is a blind-oracle leak. Max 5. */
+  rowColorRules?: { filter: FilterNode; color: string }[];
   heading?: string; // form
   successMsg?: string;
 }
@@ -384,6 +459,10 @@ export const OPTION_PALETTE = [
   "lime",
   "orange",
   "fuchsia",
+  // 10 chips, matching NocoDB's enumColors count. EXTEND ONLY — stored field
+  // options reference these names, so renaming or removing one corrupts data.
+  "blue",
+  "gray",
 ] as const;
 
 /** Option colour name → hex, for anywhere that needs a real colour value. */
@@ -396,6 +475,8 @@ export const PALETTE_HEX: Record<string, string> = {
   lime: "#84cc16",
   orange: "#f97316",
   fuchsia: "#d946ef",
+  blue: "#3b82f6",
+  gray: "#6b7280",
 };
 
 export function canEditViewConfig(
@@ -486,7 +567,7 @@ export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
  *   discord — a Discord incoming webhook: { content }.
  *
  * The dispatcher formats the body per kind (features/tables/webhook-format.ts). */
-export const WEBHOOK_KINDS = ["generic", "slack", "discord"] as const;
+export const WEBHOOK_KINDS = ["generic", "slack", "discord", "teams", "mattermost", "email"] as const;
 
 export type WebhookKind = (typeof WEBHOOK_KINDS)[number];
 
@@ -496,18 +577,24 @@ export interface Webhook {
   /** null = every table in the base. */
   tableId: string | null;
   name: string;
-  url: string;
+  /** null only for kind 'email', which has no URL — delivery goes through the
+   *  app's email sender. Enforced by a DB CHECK. */
+  url: string | null;
   secret: string;
   events: WebhookEvent[];
   /** Fire only when one of these fields changed. Empty = any field. */
   fieldIds: string[];
   /** Fire only when the record matches — the same filter tree a view uses. */
   condition: FilterNode | null;
-  /** Which body shape to send. Slack/Discord get their native shape; generic gets
-   *  Swamp's signed envelope. */
+  /** Which body shape to send. Chat kinds get their native shape; generic gets
+   *  Swamp's signed envelope; email goes out through Resend. */
   kind: WebhookKind;
-  /** Optional {{placeholder}} message for slack/discord. Null = a built default. */
+  /** Optional {{placeholder}} message for the non-generic kinds. Null = a built
+   *  default. */
   template: string | null;
+  /** Per-kind settings. email: { to }. Readable by every creator on the base —
+   *  never put a paid-API credential here. */
+  config: Record<string, unknown>;
   active: boolean;
   createdAt: string;
 }
@@ -551,25 +638,31 @@ export interface Record_ {
 // This is the wire format the client sends. The DATABASE compiles it to SQL —
 // the client never sends SQL. See swamp_query_records.
 
-export type FilterOp =
-  | "eq"
-  | "neq"
-  | "gt"
-  | "gte"
-  | "lt"
-  | "lte"
-  | "btw"
-  | "like"
-  | "nlike"
-  | "empty"
-  | "notempty"
-  | "anyof"
-  | "nanyof"
-  | "allof"
-  | "nallof"
-  | "checked"
-  | "notchecked"
-  | "isWithin";
+/** Every filter operator. The single source — schema.ts derives its z.enum from
+ *  this, and the SQL compiler (swamp_compile_filter) mirrors it arm for arm. */
+export const FILTER_OPS = [
+  "eq",
+  "neq",
+  "gt",
+  "gte",
+  "lt",
+  "lte",
+  "btw",
+  "nbtw",
+  "like",
+  "nlike",
+  "empty",
+  "notempty",
+  "anyof",
+  "nanyof",
+  "allof",
+  "nallof",
+  "checked",
+  "notchecked",
+  "isWithin",
+] as const;
+
+export type FilterOp = (typeof FILTER_OPS)[number];
 
 /**
  * The date sub-operator. This is what makes "due in the next 7 days" a STORED,
@@ -602,6 +695,11 @@ export interface FilterLeaf {
   value?: unknown;
   subOp?: DateSubOp;
   n?: number;
+  /** Compare against ANOTHER FIELD's value instead of a literal — "Actual >
+   *  Forecast". A field KEY, symmetrical with `field`; resolved through the same
+   *  catalog map in swamp_compile_filter, so the injection boundary is unchanged.
+   *  Comparison operators only; when set, `value` is ignored. */
+  valueField?: string;
 }
 
 export interface FilterGroup {
@@ -648,11 +746,12 @@ export const COMMON_AGGREGATIONS = [
   "count_unique",
   "percent_empty",
   "percent_filled",
+  "percent_unique",
 ] as const;
 
-export const NUMERIC_AGGREGATIONS = ["sum", "min", "max", "avg", "median"] as const;
+export const NUMERIC_AGGREGATIONS = ["sum", "min", "max", "avg", "median", "std_dev", "range"] as const;
 export const BOOLEAN_AGGREGATIONS = ["checked", "unchecked", "percent_checked"] as const;
-export const DATE_AGGREGATIONS = ["earliest", "latest"] as const;
+export const DATE_AGGREGATIONS = ["earliest", "latest", "date_range"] as const;
 
 /** Which summaries a column footer may offer, given the field's type. */
 export function aggregationsFor(type: FieldType): readonly string[] {
@@ -669,8 +768,8 @@ export function aggregationsFor(type: FieldType): readonly string[] {
 // checkbox, is how a filter builder ends up feeling like a debug tool.
 
 const TEXTUAL_OPS: FilterOp[] = ["eq", "neq", "like", "nlike", "empty", "notempty"];
-const NUMERIC_OPS: FilterOp[] = ["eq", "neq", "gt", "gte", "lt", "lte", "btw", "empty", "notempty"];
-const TEMPORAL_OPS: FilterOp[] = ["eq", "neq", "gt", "gte", "lt", "lte", "isWithin", "empty", "notempty"];
+const NUMERIC_OPS: FilterOp[] = ["eq", "neq", "gt", "gte", "lt", "lte", "btw", "nbtw", "empty", "notempty"];
+const TEMPORAL_OPS: FilterOp[] = ["eq", "neq", "gt", "gte", "lt", "lte", "btw", "nbtw", "isWithin", "empty", "notempty"];
 const SELECT_OPS: FilterOp[] = ["eq", "neq", "anyof", "nanyof", "empty", "notempty"];
 const MULTI_OPS: FilterOp[] = ["anyof", "nanyof", "allof", "nallof", "empty", "notempty"];
 const BOOL_OPS: FilterOp[] = ["checked", "notchecked"];
@@ -701,6 +800,8 @@ export function operatorLabel(op: FilterOp, type: FieldType): string {
       return temporal ? "is on or before" : "≤";
     case "btw":
       return "is between";
+    case "nbtw":
+      return "is not between";
     case "like":
       return type === "attachment" ? "filenames contain" : "contains";
     case "nlike":

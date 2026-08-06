@@ -22,6 +22,7 @@ import {
   UserRound,
   Users,
   Webhook,
+  Workflow,
 } from "lucide-react";
 import type { NavBase } from "@/features/tables/nav";
 import {
@@ -493,6 +494,18 @@ export function AppSidebar({
                               <Link href={`/app/b/${base.id}/integrations`}>
                                 <Plug />
                                 <span>Integrations</span>
+                              </Link>
+                            </SidebarMenuSubButton>
+                          </SidebarMenuSubItem>
+                          <SidebarMenuSubItem>
+                            <SidebarMenuSubButton
+                              asChild
+                              className={navClass}
+                              isActive={pathname === `/app/b/${base.id}/erd`}
+                            >
+                              <Link href={`/app/b/${base.id}/erd`}>
+                                <Workflow />
+                                <span>Schema</span>
                               </Link>
                             </SidebarMenuSubButton>
                           </SidebarMenuSubItem>

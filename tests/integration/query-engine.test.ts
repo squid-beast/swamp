@@ -18,6 +18,7 @@ import { createUser, deleteUser, must, workspaceOf, type TestUser } from "./harn
 let alice: TestUser;
 let bob: TestUser;
 let tableId: string;
+let baseId: string;
 
 type Spec = Record<string, unknown>;
 type Rec = { id: string; data: Record<string, unknown>; sortOrder: string };
@@ -67,6 +68,7 @@ beforeAll(async () => {
       .single()
   ) as { id: string };
   tableId = table.id;
+  baseId = base.id;
 
   // NOTE: every object in a bulk insert must carry the SAME keys. PostgREST
   // takes the union of keys across the array and sends NULL for any a given row
@@ -180,6 +182,17 @@ describe("operators", () => {
   it("btw", async () => {
     expect(await names({ filter: { field: "fld_amount", op: "btw", value: [400, 1200] } }))
       .toEqual(["Acme", "Beta"]);
+  });
+
+  it("nbtw is NULL-safe — a blank or garbage cell IS 'not between'", async () => {
+    // The complement of btw PLUS the rows whose amount is missing or "N/A":
+    // like neq/nanyof, absence satisfies a negative operator.
+    const result = await names({
+      filter: { field: "fld_amount", op: "nbtw", value: [400, 1200] },
+    });
+    expect(result).not.toContain("Acme");
+    expect(result).not.toContain("Beta");
+    expect(result).toContain("Delta"); // "N/A" → swamp_to_numeric NULL → matches
   });
 
   it("like is case-insensitive", async () => {
@@ -456,5 +469,108 @@ describe("soft delete", () => {
     } finally {
       await alice.db.from("records").update({ deleted_at: null }).eq("id", target.id);
     }
+  });
+});
+
+// ─── Phase-4: field-to-field filters + row colour rules ─────────────────────
+
+describe("field-to-field comparison (valueField)", () => {
+  beforeAll(async () => {
+    // A second numeric column to compare against.
+    must(
+      await alice.db.from("fields").insert({
+        table_id: tableId,
+        base_id: baseId,
+        name: "Target",
+        key: "fld_target",
+        type: "number",
+        is_primary: false,
+      })
+    );
+
+    const { data: rows } = await alice.db
+      .from("records")
+      .select("id, data")
+      .eq("table_id", tableId);
+
+    for (const r of rows ?? []) {
+      const d = r.data as Record<string, unknown>;
+      const target =
+        d.fld_name === "Acme" ? "1200" : d.fld_name === "Beta" ? "300" : null;
+      if (target !== null) {
+        must(
+          await alice.db
+            .from("records")
+            .update({ data: { ...d, fld_target: target } })
+            .eq("id", r.id)
+        );
+      }
+    }
+  });
+
+  it("compares one field against another — Actual > Target", async () => {
+    // Acme: 1000 vs 1200 (no). Beta: 500 vs 300 (yes). Others: no target → NULL.
+    expect(
+      await names({ filter: { field: "fld_amount", op: "gt", valueField: "fld_target" } })
+    ).toEqual(["Beta"]);
+  });
+
+  it("rejects a valueField that is not a real field — the catalog is the boundary", async () => {
+    const { error } = await alice.db.rpc("swamp_query_records", {
+      p_table_id: tableId,
+      p_spec: { filter: { field: "fld_amount", op: "gt", valueField: "fld_made_up" } },
+    });
+    expect(error).not.toBeNull();
+  });
+
+  it("rejects a valueField on an operator that doesn't support it", async () => {
+    const { error } = await alice.db.rpc("swamp_query_records", {
+      p_table_id: tableId,
+      p_spec: { filter: { field: "fld_name", op: "like", valueField: "fld_target" } },
+    });
+    expect(error).not.toBeNull();
+  });
+});
+
+describe("swamp_row_colors", () => {
+  it("first matching rule wins, evaluated over the given ids only", async () => {
+    const { data: rows } = await alice.db
+      .from("records")
+      .select("id, data")
+      .eq("table_id", tableId);
+    const byName = new Map((rows ?? []).map((r) => [(r.data as any).fld_name, r.id]));
+    const ids = [...byName.values()];
+
+    const { data, error } = await alice.db.rpc("swamp_row_colors", {
+      p_table_id: tableId,
+      p_record_ids: ids,
+      p_rules: [
+        { filter: { field: "fld_amount", op: "gt", value: 900 }, color: "amber" },
+        { filter: { field: "fld_status", op: "eq", value: "open" }, color: "sky" },
+      ],
+    });
+    expect(error).toBeNull();
+
+    const colors = data as Record<string, string>;
+    expect(colors[byName.get("Acme")!]).toBe("amber"); // matches BOTH; first wins
+    expect(colors[byName.get("Beta")!]).toBe("sky");
+    expect(colors[byName.get("Ceres")!]).toBe("amber");
+    expect(colors[byName.get("Delta")!]).toBe("sky"); // "N/A" amount → NULL → rule 2
+    expect(colors[byName.get("Everest")!]).toBeUndefined(); // matches nothing
+  });
+
+  it("a rule over an unknown field raises rather than guessing", async () => {
+    const { data: rows } = await alice.db
+      .from("records")
+      .select("id")
+      .eq("table_id", tableId)
+      .limit(1);
+
+    const { error } = await alice.db.rpc("swamp_row_colors", {
+      p_table_id: tableId,
+      p_record_ids: [rows![0].id],
+      p_rules: [{ filter: { field: "fld_nope", op: "eq", value: 1 }, color: "amber" }],
+    });
+    expect(error).not.toBeNull();
   });
 });

@@ -330,6 +330,62 @@ describe("presets", () => {
     // The check constraint is the boundary — the zod enum is only the good error.
     expect(error).not.toBeNull();
   });
+
+  it("accepts the Phase-3 kinds: teams, mattermost", async () => {
+    for (const kind of ["teams", "mattermost"]) {
+      const { error } = await alice.db.from("webhooks").insert({
+        base_id: baseId,
+        name: `hook-${kind}`,
+        url: URL_,
+        events: ["record.created"],
+        kind,
+      });
+      expect(error, kind).toBeNull();
+    }
+  });
+
+  it("email kind: no URL allowed, recipient required — both enforced in the DB", async () => {
+    // Valid: null url + config.to.
+    const ok = await alice.db.from("webhooks").insert({
+      base_id: baseId,
+      name: "mail",
+      url: null,
+      events: ["record.created"],
+      kind: "email",
+      config: { to: "ops@example.com" },
+    });
+    expect(ok.error).toBeNull();
+
+    // A URL on an email hook is refused.
+    const withUrl = await alice.db.from("webhooks").insert({
+      base_id: baseId,
+      name: "mail-bad-url",
+      url: URL_,
+      events: ["record.created"],
+      kind: "email",
+      config: { to: "ops@example.com" },
+    });
+    expect(withUrl.error).not.toBeNull();
+
+    // A missing recipient is refused — it could never deliver.
+    const noTo = await alice.db.from("webhooks").insert({
+      base_id: baseId,
+      name: "mail-no-to",
+      url: null,
+      events: ["record.created"],
+      kind: "email",
+    });
+    expect(noTo.error).not.toBeNull();
+
+    // And a NON-email hook still cannot drop its URL.
+    const genericNoUrl = await alice.db.from("webhooks").insert({
+      base_id: baseId,
+      name: "generic-no-url",
+      url: null,
+      events: ["record.created"],
+    });
+    expect(genericNoUrl.error).not.toBeNull();
+  });
 });
 
 // ─── Who may do what ────────────────────────────────────────────────────────

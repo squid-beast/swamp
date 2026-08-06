@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getTable, listViews } from "@/features/tables/repo";
+import { VIEW_TYPES } from "@/features/tables/types";
 import { createView } from "@/features/tables/schema-ops";
 import { requireAuth } from "@/shared/supabase/server";
 
@@ -8,7 +9,7 @@ export const dynamic = "force-dynamic";
 
 const createViewSchema = z.object({
   name: z.string().trim().min(1).max(120),
-  type: z.enum(["grid", "gallery", "kanban", "form", "calendar"]),
+  type: z.enum(VIEW_TYPES),
   config: z.record(z.string(), z.unknown()).optional(),
 });
 

@@ -35,6 +35,8 @@ import { initialsFromLabel } from "@/shared/lib/format";
 import { cn } from "@/shared/lib/utils";
 import {
   isFilterGroup,
+  OPTION_PALETTE,
+  PALETTE_HEX,
   type Field,
   type FilterNode,
   type SortSpec,
@@ -79,9 +81,9 @@ export interface ToolbarProps {
   /** New field order, per view. Ids in their new order. */
   onReorder: (orderedIds: string[]) => void;
 
-  /** The field the view groups by, and which way. null = ungrouped. */
-  groupBy: { fieldId: string; dir: "asc" | "desc" } | null;
-  onGroupByChange: (next: { fieldId: string; dir: "asc" | "desc" } | null) => void;
+  /** The fields the view groups by, outermost first (max 3). Empty = ungrouped. */
+  groupBys: { fieldId: string; dir: "asc" | "desc" }[];
+  onGroupBysChange: (next: { fieldId: string; dir: "asc" | "desc" }[]) => void;
 
   rowHeight: RowHeight;
   onRowHeightChange: (h: RowHeight) => void;
@@ -89,6 +91,11 @@ export interface ToolbarProps {
   /** The single-select/status field whose option colours tint each row. null = off. */
   colorFieldId: string | null;
   onColorFieldChange: (fieldId: string | null) => void;
+
+  /** Conditional colour rules — first match wins, evaluated in SQL. Max 5.
+   *  Take precedence over colorFieldId. */
+  colorRules: { filter: FilterNode; color: string }[];
+  onColorRulesChange: (next: { filter: FilterNode; color: string }[]) => void;
 
   /** Everyone else with this table open right now. */
   presence?: PresenceUser[];
@@ -120,12 +127,14 @@ export function Toolbar(props: ToolbarProps) {
     hidden,
     onHiddenChange,
     onReorder,
-    groupBy,
-    onGroupByChange,
+    groupBys,
+    onGroupBysChange,
     rowHeight,
     onRowHeightChange,
     colorFieldId,
     onColorFieldChange,
+    colorRules,
+    onColorRulesChange,
     presence,
     search,
     onSearchChange,
@@ -191,78 +200,126 @@ export function Toolbar(props: ToolbarProps) {
         </span>
       )}
 
-      {/* Group */}
+      {/* Group — up to three nested levels, like NocoDB. */}
       <Popover>
         <PopoverTrigger asChild>
           <Button variant="ghost" size="sm" className="h-8 gap-1.5 text-[13px]">
             <GroupIcon className="size-3.5" />
             Group
-            {groupBy && (
-              <span className="max-w-24 truncate rounded bg-muted px-1 text-[11px]">
-                {fields.find((f) => f.id === groupBy.fieldId)?.name ?? "?"}
+            {groupBys.length > 0 && (
+              <span className="max-w-32 truncate rounded bg-muted px-1 text-[11px]">
+                {groupBys
+                  .map((g) => fields.find((f) => f.id === g.fieldId)?.name ?? "?")
+                  .join(" › ")}
               </span>
             )}
           </Button>
         </PopoverTrigger>
-        <PopoverContent align="start" className="w-64 p-2">
+        <PopoverContent align="start" className="w-72 p-2">
           <div className="flex items-center justify-between px-1 pb-1.5">
             <span className="text-[12px] text-muted-foreground">Group by</span>
-            {groupBy && (
+            {groupBys.length > 0 && (
               <Button
                 variant="ghost"
                 size="sm"
                 className="h-6 px-1.5 text-[11px]"
                 disabled={!canEditConfig}
-                onClick={() => onGroupByChange(null)}
+                onClick={() => onGroupBysChange([])}
               >
                 Clear
               </Button>
             )}
           </div>
 
-          <Select
-            value={groupBy?.fieldId ?? ""}
-            onValueChange={(v) =>
-              onGroupByChange(v ? { fieldId: v, dir: groupBy?.dir ?? "asc" } : null)
-            }
-            disabled={!canEditConfig}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Pick a field" />
-            </SelectTrigger>
-            <SelectContent>
-              {groupable.length === 0 && (
-                <p className="px-2 py-1.5 text-[12px] text-muted-foreground">
-                  Nothing groupable in this view
-                </p>
-              )}
-              {groupable.map((f) => (
-                <SelectItem key={f.id} value={f.id}>
-                  {f.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          {groupBy && (
-            <div className="mt-2 flex gap-1">
-              {(["asc", "desc"] as const).map((d) => (
-                <Button
-                  key={d}
-                  variant={groupBy.dir === d ? "secondary" : "ghost"}
-                  size="sm"
-                  className="h-7 flex-1 text-[12px]"
-                  disabled={!canEditConfig}
-                  onClick={() => onGroupByChange({ fieldId: groupBy.fieldId, dir: d })}
-                >
-                  {d === "asc" ? "A → Z" : "Z → A"}
-                </Button>
-              ))}
+          {groupBys.map((g, i) => (
+            <div key={g.fieldId} className="mb-1.5 flex items-center gap-1">
+              <Select
+                value={g.fieldId}
+                onValueChange={(v) =>
+                  onGroupBysChange(
+                    groupBys.map((x, j) => (j === i ? { ...x, fieldId: v } : x))
+                  )
+                }
+                disabled={!canEditConfig}
+              >
+                <SelectTrigger className="h-8 flex-1">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {groupable
+                    // A field can hold one level, not two.
+                    .filter(
+                      (f) => f.id === g.fieldId || !groupBys.some((x) => x.fieldId === f.id)
+                    )
+                    .map((f) => (
+                      <SelectItem key={f.id} value={f.id}>
+                        {f.name}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+              <Button
+                variant={g.dir === "asc" ? "secondary" : "ghost"}
+                size="sm"
+                className="h-8 px-2 text-[11px]"
+                disabled={!canEditConfig}
+                onClick={() =>
+                  onGroupBysChange(
+                    groupBys.map((x, j) =>
+                      j === i ? { ...x, dir: x.dir === "asc" ? "desc" : "asc" } : x
+                    )
+                  )
+                }
+                title="Direction"
+              >
+                {g.dir === "asc" ? "A→Z" : "Z→A"}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 px-1.5 text-muted-foreground"
+                disabled={!canEditConfig}
+                onClick={() => onGroupBysChange(groupBys.filter((_, j) => j !== i))}
+                aria-label="Remove level"
+              >
+                ×
+              </Button>
             </div>
+          ))}
+
+          {groupBys.length < 3 && (
+            <Select
+              value=""
+              onValueChange={(v) =>
+                v && onGroupBysChange([...groupBys, { fieldId: v, dir: "asc" }])
+              }
+              disabled={!canEditConfig}
+            >
+              <SelectTrigger className="h-8">
+                <SelectValue
+                  placeholder={groupBys.length ? "Add a level" : "Pick a field"}
+                />
+              </SelectTrigger>
+              <SelectContent>
+                {groupable.filter((f) => !groupBys.some((x) => x.fieldId === f.id))
+                  .length === 0 && (
+                  <p className="px-2 py-1.5 text-[12px] text-muted-foreground">
+                    Nothing groupable in this view
+                  </p>
+                )}
+                {groupable
+                  .filter((f) => !groupBys.some((x) => x.fieldId === f.id))
+                  .map((f) => (
+                    <SelectItem key={f.id} value={f.id}>
+                      {f.name}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
           )}
 
           <p className="px-1 pt-2 text-[11px] text-muted-foreground">
-            Groups count every matching record, not just the ones loaded.
+            Top-level groups count every matching record, not just the ones loaded.
           </p>
         </PopoverContent>
       </Popover>
@@ -526,6 +583,84 @@ export function Toolbar(props: ToolbarProps) {
           <p className="px-1 pt-2 text-[11px] text-muted-foreground">
             Each row takes the colour of its option — the same colours as the pills.
           </p>
+
+          {/* Conditional rules — first match wins, decided in SQL. They beat the
+              option tint above. */}
+          <div className="mt-3 border-t pt-2">
+            <div className="flex items-center justify-between px-1 pb-1.5">
+              <span className="text-[12px] text-muted-foreground">Colour when…</span>
+              {colorRules.length < 5 && fields.length > 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 px-1.5 text-[11px]"
+                  disabled={!canEditConfig}
+                  onClick={() =>
+                    onColorRulesChange([
+                      ...colorRules,
+                      { filter: { op: "and", children: [] }, color: OPTION_PALETTE[colorRules.length % OPTION_PALETTE.length] },
+                    ])
+                  }
+                >
+                  Add rule
+                </Button>
+              )}
+            </div>
+
+            {colorRules.map((rule, i) => (
+              <div key={i} className="mb-2 rounded-md border p-1.5">
+                <div className="mb-1 flex items-center gap-1.5">
+                  <Select
+                    value={rule.color}
+                    onValueChange={(c) =>
+                      onColorRulesChange(
+                        colorRules.map((r, j) => (j === i ? { ...r, color: c } : r))
+                      )
+                    }
+                    disabled={!canEditConfig}
+                  >
+                    <SelectTrigger className="h-7 w-28 text-[12px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {OPTION_PALETTE.map((c) => (
+                        <SelectItem key={c} value={c}>
+                          <span className="flex items-center gap-1.5">
+                            <span
+                              className="size-2.5 rounded-full"
+                              style={{ background: PALETTE_HEX[c] }}
+                            />
+                            {c}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="ml-auto h-7 px-1.5 text-muted-foreground"
+                    disabled={!canEditConfig}
+                    onClick={() => onColorRulesChange(colorRules.filter((_, j) => j !== i))}
+                    aria-label="Remove rule"
+                  >
+                    ×
+                  </Button>
+                </div>
+                <FilterBuilder
+                  fields={fields}
+                  value={rule.filter}
+                  onChange={(next) =>
+                    onColorRulesChange(
+                      colorRules.map((r, j) =>
+                        j === i ? { ...r, filter: next ?? { op: "and", children: [] } } : r
+                      )
+                    )
+                  }
+                />
+              </div>
+            ))}
+          </div>
         </PopoverContent>
       </Popover>
 

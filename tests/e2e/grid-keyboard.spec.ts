@@ -73,7 +73,13 @@ async function setup(page: Page) {
 
   await page.goto("/app/import");
   await page.setInputFiles('input[type="file"]', csvPath);
-  await page.getByRole("button", { name: /^import$/i }).click();
+  // Import is TWO steps: read the file ("Continue"), then choose where it lands.
+  // In the default "New table" mode that second button reads "Create table" —
+  // "Import" is the EXISTING-table label. This helper predated the destination
+  // step (added 2026-07-17) and clicked straight for "Import", so every spec
+  // that imports has been timing out at 60s ever since.
+  await page.getByRole("button", { name: /^continue$/i }).click();
+  await page.getByRole("button", { name: /^create table$/i }).click();
   await page.waitForURL(/\/app\/t\/[0-9a-f-]{36}/);
   await expect(page.getByTestId("grid-row")).toHaveCount(4);
 }

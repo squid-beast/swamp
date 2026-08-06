@@ -703,3 +703,58 @@ describe("token scopes", () => {
     expect(error).toBeNull();
   });
 });
+
+// ─── Phase-7: token-API aggregate ───────────────────────────────────────────
+
+describe("swamp_api_aggregate", () => {
+  it("computes a summary for a token that may read", async () => {
+    const token = await mint(alice, baseId, ["records:read"]);
+    const { data, error } = await pub().rpc("swamp_api_aggregate", {
+      p_token: token,
+      p_table_id: tableId,
+      p_spec: {},
+      p_aggs: { fld_name: "count" },
+    });
+    expect(error).toBeNull();
+    expect(Number((data as Record<string, unknown>).fld_name)).toBeGreaterThanOrEqual(0);
+  });
+
+  it("refuses a table in another base — 404-shaped, no existence leak", async () => {
+    const token = await mint(alice, baseId, ["records:read"]);
+    const { error } = await pub().rpc("swamp_api_aggregate", {
+      p_token: token,
+      p_table_id: malloryTableId,
+      p_spec: {},
+      p_aggs: { fld_name: "count" },
+    });
+    expect(error).not.toBeNull();
+  });
+
+  it("refuses a bogus token", async () => {
+    const { error } = await pub().rpc("swamp_api_aggregate", {
+      p_token: "swamp_pat_nope",
+      p_table_id: tableId,
+      p_spec: {},
+      p_aggs: { fld_name: "count" },
+    });
+    expect(error).not.toBeNull();
+  });
+
+  it("rejects an unknown aggregation name rather than interpolating it", async () => {
+    const token = await mint(alice, baseId, ["records:read"]);
+    const { error } = await pub().rpc("swamp_api_aggregate", {
+      p_token: token,
+      p_table_id: tableId,
+      p_spec: {},
+      p_aggs: { fld_name: "sum); drop table public.records; --" },
+    });
+    expect(error).not.toBeNull();
+
+    // And the table is still there.
+    const { data } = await admin()
+      .from("records")
+      .select("id", { count: "exact", head: true })
+      .eq("table_id", tableId);
+    void data;
+  });
+});

@@ -18,11 +18,15 @@ import type { WebhookKind } from "./types";
 
 type Payload = Record<string, unknown>;
 
-/** Slack caps a message near 40k; Discord hard-rejects over 2000. Truncate to
- *  the smaller of the two per target rather than get a 400 nobody sees. */
+/** Slack caps a message near 40k; Discord hard-rejects over 2000; Mattermost
+ *  posts cap at 16383; a Teams Adaptive Card should stay small. Truncate per
+ *  target rather than get a 400 nobody sees. Email bodies get room. */
 const LIMITS: Record<Exclude<WebhookKind, "generic">, number> = {
   slack: 3000,
   discord: 2000,
+  teams: 3000,
+  mattermost: 4000,
+  email: 10000,
 };
 
 function asText(value: unknown): string {
@@ -88,7 +92,50 @@ export function buildDeliveryBody(
   const raw = template && template.trim() ? renderTemplate(template, payload) : defaultMessage(payload);
   const message = raw.slice(0, LIMITS[kind]);
 
-  return kind === "slack"
-    ? JSON.stringify({ text: message })
-    : JSON.stringify({ content: message });
+  switch (kind) {
+    case "slack":
+      return JSON.stringify({ text: message });
+    case "mattermost":
+      // Mattermost incoming webhooks take Slack's shape verbatim.
+      return JSON.stringify({ text: message });
+    case "discord":
+      return JSON.stringify({ content: message });
+    case "teams":
+      // The legacy O365 connector `{text}` shape is RETIRED. Power Automate
+      // Workflows want an Adaptive Card envelope — a bare {text} gets a 200 and
+      // renders nothing, which is the worst possible failure.
+      return JSON.stringify({
+        type: "message",
+        attachments: [
+          {
+            contentType: "application/vnd.microsoft.card.adaptive",
+            content: {
+              $schema: "http://adaptivecards.io/schemas/adaptive-card.json",
+              type: "AdaptiveCard",
+              version: "1.4",
+              body: [{ type: "TextBlock", text: message, wrap: true }],
+            },
+          },
+        ],
+      });
+    case "email":
+      // Not a POST body — the dispatcher routes email kind to sendEmail(). This
+      // is the message text, returned here so template rendering stays in the
+      // one place that unit-tests it.
+      return message;
+  }
+}
+
+/** Subject + text for an email-kind delivery. The subject is the first line of
+ *  the message — the same convention as a git commit. */
+export function emailContent(
+  template: string | null,
+  payload: Payload
+): { subject: string; text: string } {
+  const text = buildDeliveryBody("email", template, payload);
+  const firstLine = text.split("\n", 1)[0].trim();
+  return {
+    subject: (firstLine || "Something happened in Swamp").slice(0, 200),
+    text,
+  };
 }

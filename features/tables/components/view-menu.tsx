@@ -8,10 +8,13 @@ import {
   Check,
   Copy,
   FileText,
+  GanttChartSquare,
   Globe,
   Grid3x3,
   Images,
   Kanban as KanbanIcon,
+  List as ListIcon,
+  MapPin,
   CopyPlus,
   Loader2,
   Lock,
@@ -19,6 +22,7 @@ import {
   Pencil,
   Plus,
   RotateCcw,
+  ShieldCheck,
   Trash,
   Trash2,
   User,
@@ -56,6 +60,10 @@ const VIEW_ICON: Record<ViewType, React.ComponentType<{ className?: string }>> =
   kanban: KanbanIcon,
   calendar: CalendarIcon,
   form: FileText,
+  list: ListIcon,
+  timeline: GanttChartSquare,
+  gantt: GanttChartSquare,
+  map: MapPin,
 };
 
 const LOCK_LABEL: Record<ViewLock, { label: string; hint: string; icon: React.ComponentType<{ className?: string }> }> = {
@@ -114,19 +122,28 @@ export function ViewMenu({
     const dateField = fields.find((f) => f.type === "date" || f.type === "datetime");
     const coverField = fields.find((f) => f.type === "image");
 
+    const coordField = fields.find((f) => f.type === "coordinates");
+
     if (type === "kanban" && !stackField) {
       toast.error("A kanban needs a single-select or status field to stack by.");
       return;
     }
-    if (type === "calendar" && !dateField) {
-      toast.error("A calendar needs a date field.");
+    if ((type === "calendar" || type === "timeline" || type === "gantt") && !dateField) {
+      toast.error(`A ${type} needs a date field.`);
+      return;
+    }
+    if (type === "map" && !coordField) {
+      toast.error("A map needs a coordinates field.");
       return;
     }
 
     const config: Record<string, unknown> = {};
     if (type === "kanban") config.stackFieldId = stackField!.id;
-    if (type === "calendar") config.ranges = [{ fromFieldId: dateField!.id }];
+    if (type === "calendar" || type === "timeline" || type === "gantt") {
+      config.ranges = [{ fromFieldId: dateField!.id }];
+    }
     if (type === "gallery" && coverField) config.coverFieldId = coverField.id;
+    if (type === "map") config.coordFieldId = coordField!.id;
 
     const res = await fetch(`/api/tables/${tableId}/views`, {
       method: "POST",
@@ -262,7 +279,7 @@ export function ViewMenu({
               New view
             </DropdownMenuSubTrigger>
             <DropdownMenuSubContent>
-              {(["grid", "gallery", "kanban", "calendar", "form"] as ViewType[]).map((t) => (
+              {(["grid", "gallery", "kanban", "calendar", "list", "timeline", "gantt", "map", "form"] as ViewType[]).map((t) => (
                 <DropdownMenuItem key={t} onClick={() => create(t)}>
                   {React.createElement(VIEW_ICON[t], { className: "mr-2 size-3.5" })}
                   <span className="capitalize">{t}</span>
@@ -321,6 +338,11 @@ export function ViewMenu({
           <DropdownMenuItem onClick={() => setTrashing(true)}>
             <Trash className="mr-2 size-3.5" />
             Trash…
+          </DropdownMenuItem>
+
+          <DropdownMenuItem onClick={() => router.push(`/app/t/${tableId}/permissions`)}>
+            <ShieldCheck className="mr-2 size-3.5" />
+            Permissions…
           </DropdownMenuItem>
 
           <DropdownMenuSeparator />

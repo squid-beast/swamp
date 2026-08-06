@@ -79,6 +79,16 @@ const ALLOWED = new Set([
   // status/replayed-body, finish returns nothing. See 20260721000000_ingest_reliability.sql.
   "swamp_idempotency_claim",
   "swamp_idempotency_finish",
+  // Whole-base share landing. Returns ONLY the base's name and the views that are
+  // THEMSELVES already shared (their public ids) — no records, no field metadata —
+  // after its own bcrypt password gate. Record reads still flow through
+  // swamp_shared_records and its per-view allow-list; this adds zero new
+  // record-reading surface. See 20260805050000_sharing_reach.sql.
+  "swamp_shared_base",
+  // Token-API aggregate, for MCP and REST. Same authority as swamp_api_query —
+  // enters through swamp_api_require (token + scope + live role), table pinned to
+  // the token's base, then delegates to the whitelisted swamp_aggregate templates.
+  "swamp_api_aggregate",
 ]);
 
 let db: Client;

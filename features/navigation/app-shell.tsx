@@ -23,6 +23,7 @@ import { Button } from "@/shared/ui/button";
 import { AppSidebar } from "./app-sidebar";
 import { CommandMenu } from "./command-menu";
 import { ThemeToggle } from "@/shared/components/theme-toggle";
+import { NotificationBell } from "./notification-bell";
 
 export type ShellUser = { name: string; email: string; avatarUrl: string | null };
 
@@ -101,6 +102,7 @@ export function AppShell({
             >
               <Search className="size-4" />
             </Button>
+            <NotificationBell />
             <ThemeToggle />
           </div>
         </header>
