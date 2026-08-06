@@ -480,3 +480,223 @@ describe("user fields on a public form", () => {
     expect(rec.data.fld_owner).toBe(alice.id);
   });
 });
+
+// ─── Phase-7: vanity slugs + shared base ────────────────────────────────────
+
+// Unique per run: a leftover from a failed teardown must not collide.
+const SLUG = `spring-launch-${Math.random().toString(36).slice(2, 8)}`;
+const SLUG2 = `autumn-launch-${Math.random().toString(36).slice(2, 8)}`;
+const SLUG3 = `winter-launch-${Math.random().toString(36).slice(2, 8)}`;
+
+describe("vanity slugs", () => {
+  it("a slug resolves like the share id; a slug on an UNSHARED view resolves nothing", async () => {
+    must(
+      await alice.db.from("views").update({ share_slug: SLUG }).eq("id", gridViewId)
+    );
+
+    const bySlug = await anon.rpc("swamp_shared_meta", {
+      p_share_id: SLUG,
+      p_password: null,
+    });
+    expect(bySlug.error).toBeNull();
+
+    // Unshare: BOTH spellings must die together.
+    must(await alice.db.rpc("swamp_unshare_view", { p_view_id: gridViewId }));
+    const after = await anon.rpc("swamp_shared_meta", {
+      p_share_id: SLUG,
+      p_password: null,
+    });
+    expect(after.error).not.toBeNull();
+
+    // Restore for later tests.
+    must(await alice.db.rpc("swamp_share_view", { p_view_id: gridViewId, p_password: null }));
+  });
+
+  it("unshare CLEARS the slug — re-sharing must not resurrect the old audience", async () => {
+    must(await alice.db.from("views").update({ share_slug: SLUG2 }).eq("id", gridViewId));
+    must(await alice.db.rpc("swamp_unshare_view", { p_view_id: gridViewId }));
+
+    const { data } = await alice.db
+      .from("views").select("share_id, share_slug").eq("id", gridViewId).single();
+    expect(data!.share_id).toBeNull();
+    expect(data!.share_slug).toBeNull();
+
+    // Re-share: the old slug must NOT work against the new link.
+    must(await alice.db.rpc("swamp_share_view", { p_view_id: gridViewId, p_password: null }));
+    const revived = await anon.rpc("swamp_shared_meta", {
+      p_share_id: SLUG2,
+      p_password: null,
+    });
+    expect(revived.error).not.toBeNull();
+  });
+
+  it("setting a slug must NOT rotate the id or clear the password", async () => {
+    // The bug this pins: the share route called swamp_share_view on EVERY POST,
+    // and that function always mints a fresh share_id and sets the password hash
+    // from its argument — so `{"slug":"x"}` (no password key) silently rotated
+    // the link AND unprotected a password-gated share.
+    const pw = "guard-me";
+    const before = must(
+      await alice.db.rpc("swamp_share_view", { p_view_id: gridViewId, p_password: pw })
+    ) as string;
+
+    // What the fixed route does for a slug-only edit: touch share_slug, nothing else.
+    must(await alice.db.from("views").update({ share_slug: SLUG3 }).eq("id", gridViewId));
+
+    const { data } = await alice.db
+      .from("views").select("share_id, share_password_hash").eq("id", gridViewId).single();
+    expect(data!.share_id).toBe(before);            // link did not rotate
+    expect(data!.share_password_hash).not.toBeNull(); // gate still up
+
+    // And the gate really still works through the resolver.
+    const wrong = await anon.rpc("swamp_shared_meta", { p_share_id: SLUG3, p_password: "nope" });
+    expect(wrong.error).not.toBeNull();
+    const right = await anon.rpc("swamp_shared_meta", { p_share_id: SLUG3, p_password: pw });
+    expect(right.error).toBeNull();
+
+    // Clean up so later tests see an unprotected share.
+    must(await alice.db.from("views").update({ share_slug: null }).eq("id", gridViewId));
+    must(await alice.db.rpc("swamp_share_view", { p_view_id: gridViewId, p_password: null }));
+  });
+
+  it("a share_id always beats a slug that collides with it", async () => {
+    // `id = x OR slug = x` in one SELECT INTO let a second view answer at the
+    // first view's URL, with plpgsql picking arbitrarily. Resolution is ordered.
+    const realId = must(
+      await alice.db.rpc("swamp_share_view", { p_view_id: gridViewId, p_password: null })
+    ) as string;
+
+    // A second view whose SLUG is the first view's share_id.
+    const other = must(
+      await alice.db.from("views")
+        .insert({ table_id: tableId, base_id: baseId, type: "grid", name: "Impostor" })
+        .select().single()
+    ) as { id: string };
+    must(await alice.db.rpc("swamp_share_view", { p_view_id: other.id, p_password: null }));
+
+    const collide = await alice.db
+      .from("views").update({ share_slug: realId.toLowerCase() }).eq("id", other.id);
+
+    // The slug regex may reject it outright (share_ids can carry uppercase or
+    // underscores); either outcome is safe. When it IS accepted, the id wins.
+    if (!collide.error) {
+      const { data } = await anon.rpc("swamp_shared_meta", {
+        p_share_id: realId, p_password: null,
+      });
+      expect((data as { view: { name: string } }).view.name).not.toBe("Impostor");
+    }
+
+    must(await alice.db.from("views").delete().eq("id", other.id));
+  });
+
+  it("unsharing a view you cannot touch RAISES rather than reporting success", async () => {
+    const mallory = await createUser();
+    try {
+      const { error } = await mallory.db.rpc("swamp_unshare_view", { p_view_id: gridViewId });
+      expect(error).not.toBeNull();
+    } finally {
+      await deleteUser(mallory);
+    }
+  });
+
+  it("the DB refuses a malformed slug", async () => {
+    const { error } = await alice.db
+      .from("views")
+      .update({ share_slug: "Bad Slug!" })
+      .eq("id", gridViewId);
+    expect(error).not.toBeNull();
+  });
+});
+
+describe("shared base", () => {
+  it("lists ONLY already-shared views — names, no records, no fields", async () => {
+    const shareId = must(
+      await alice.db.rpc("swamp_share_base", { p_base_id: baseId, p_password: null })
+    ) as string;
+
+    const { data, error } = await anon.rpc("swamp_shared_base", {
+      p_share_id: shareId,
+      p_password: null,
+    });
+    expect(error).toBeNull();
+
+    const base = data as {
+      base: { name: string };
+      views: { shareId: string; name: string }[];
+    };
+    // Only views with their own share_id appear; each entry is names + ids only.
+    expect(base.views.length).toBeGreaterThan(0);
+    for (const v of base.views) {
+      expect(Object.keys(v).sort()).toEqual(["name", "shareId", "tableName", "type"]);
+    }
+  });
+
+  it("a password-protected base share gates on the password", async () => {
+    const shareId = must(
+      await alice.db.rpc("swamp_share_base", { p_base_id: baseId, p_password: "sekret" })
+    ) as string;
+
+    const wrong = await anon.rpc("swamp_shared_base", {
+      p_share_id: shareId,
+      p_password: "nope",
+    });
+    expect(wrong.error).not.toBeNull();
+
+    const right = await anon.rpc("swamp_shared_base", {
+      p_share_id: shareId,
+      p_password: "sekret",
+    });
+    expect(right.error).toBeNull();
+  });
+
+  it("a stranger cannot share someone else's base", async () => {
+    const mallory = await createUser();
+    try {
+      const { error } = await mallory.db.rpc("swamp_share_base", {
+        p_base_id: baseId,
+        p_password: null,
+      });
+      expect(error).not.toBeNull();
+    } finally {
+      await deleteUser(mallory);
+    }
+  });
+
+  it("a non-creator's unshare RAISES rather than silently no-op'ing", async () => {
+    // The members page renders the share panel to anyone who can READ the base,
+    // but `bases: creator update` gates the write. A bare UPDATE filtered to zero
+    // rows by RLS returns success — the operator would be told the link was
+    // revoked while /s/b/<id> stayed live. That is the one outcome worse than an
+    // error, so the function raises.
+    must(
+      await alice.db.rpc("swamp_share_base", { p_base_id: baseId, p_password: null })
+    );
+
+    const bob = await createUser();
+    try {
+      must(
+        await alice.db
+          .from("base_members")
+          .upsert({ base_id: baseId, user_id: bob.id, role: "editor" })
+      );
+
+      const { error } = await bob.db.rpc("swamp_unshare_base", { p_base_id: baseId });
+      expect(error).not.toBeNull();
+
+      // And the link really is still live — the raise was not cosmetic.
+      const { data } = await alice.db
+        .from("bases").select("share_id").eq("id", baseId).single();
+      expect(data!.share_id).not.toBeNull();
+    } finally {
+      await deleteUser(bob);
+    }
+  });
+
+  it("unshare kills the landing", async () => {
+    must(await alice.db.rpc("swamp_unshare_base", { p_base_id: baseId }));
+    // Any previously issued id is dead — we don't know it here, so assert the
+    // column is actually cleared.
+    const { data } = await alice.db.from("bases").select("share_id").eq("id", baseId).single();
+    expect(data!.share_id).toBeNull();
+  });
+});

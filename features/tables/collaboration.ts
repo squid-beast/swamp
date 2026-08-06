@@ -42,6 +42,7 @@ async function namesFor(ids: (string | null)[]): Promise<Map<string, string>> {
 
 export interface Comment {
   id: string;
+  baseId: string;
   recordId: string;
   authorId: string;
   authorName: string;
@@ -73,7 +74,7 @@ export function extractMentions(body: string): string[] {
 export async function listComments(recordId: string): Promise<Comment[]> {
   const { data, error } = await db()
     .from("comments")
-    .select("id, record_id, author_id, body, mentions, resolved_by, resolved_at, created_at, updated_at")
+    .select("id, base_id, record_id, author_id, body, mentions, resolved_by, resolved_at, created_at, updated_at")
     .eq("record_id", recordId)
     .order("created_at");
 
@@ -86,6 +87,7 @@ export async function listComments(recordId: string): Promise<Comment[]> {
 
   return data.map((c: Row) => ({
     id: c.id as string,
+    baseId: c.base_id as string,
     recordId: c.record_id as string,
     authorId: c.author_id as string,
     authorName: names.get(c.author_id as string) ?? "Someone",

@@ -1,39 +1,30 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getTable, listFields, queryRecords } from "@/features/tables/repo";
 import { loadViewConfig } from "@/features/tables/view-config";
+import { csvRow } from "@/features/tables/csv";
 import { requireAuth } from "@/shared/supabase/server";
 import type { Field, QuerySpec } from "@/features/tables/types";
 
-// CSV export, honouring the view's filters, sorts and visible fields.
+// Export, honouring the view's filters, sorts and visible fields.
+// `?format=csv|json|xlsx` — csv unless asked.
 //
-// ── Why this streams ──
+// ── Why csv/json stream and xlsx does not ──
 //
-// The obvious implementation builds the whole CSV in a string and returns it.
+// The obvious implementation builds the whole file in a string and returns it.
 // That's fine for 5,000 rows — and 5,000 rows is exactly the ceiling we spent
-// Phase 1 removing. A 500,000-row export would build a ~200MB string in server
-// memory and fall over.
+// Phase 1 removing. So CSV and JSON page through the query engine with the same
+// cursor the grid uses and push each page into a ReadableStream: memory stays
+// flat regardless of table size.
 //
-// So it pages through the query engine with the same cursor the grid uses and
-// pushes each page into a ReadableStream. Memory stays flat regardless of table
-// size, and the browser starts saving immediately instead of waiting.
+// XLSX CANNOT stream — SheetJS builds the whole workbook in memory. Rather than
+// reintroduce the ceiling and dress it up as a feature, xlsx has an honest hard
+// cap (XLSX_MAX_ROWS) and a 413 above it that points at CSV.
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 300;
+// 60 is Vercel Hobby's ceiling — 300 requires Pro and silently clamps on Hobby.
+export const maxDuration = 60;
 
 const PAGE = 500;
-
-/** RFC 4180: quote if the value contains a comma, quote or newline; double any quotes. */
-function csvCell(value: unknown): string {
-  if (value == null) return "";
-
-  const s = Array.isArray(value) ? value.join(", ") : String(value);
-  if (!/[",\n\r]/.test(s)) return s;
-  return `"${s.replace(/"/g, '""')}"`;
-}
-
-function csvRow(cells: unknown[]): string {
-  return cells.map(csvCell).join(",") + "\r\n";
-}
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   const denied = await requireAuth();
@@ -69,27 +60,90 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       );
   }
 
+  const format = req.nextUrl.searchParams.get("format") ?? "csv";
+  const stem = table.name.replace(/[^a-z0-9]+/gi, "-").toLowerCase();
   const encoder = new TextEncoder();
+
+  if (format === "xlsx") {
+    // In-memory by necessity (see header). Capped, and honest about it.
+    const XLSX_MAX_ROWS = 50_000;
+    const rows: unknown[][] = [fields.map((f) => f.name)];
+
+    let cursor = null as QuerySpec["cursor"];
+    for (;;) {
+      const page = await queryRecords(params.id, { ...spec, limit: PAGE, cursor });
+      for (const record of page.records) {
+        rows.push(fields.map((f) => {
+          const v = record.data[f.key];
+          return Array.isArray(v) ? v.join(", ") : v;
+        }));
+        // `rows` carries the header, so the DATA count is length - 1. Comparing
+        // the raw length would 413 a table of exactly XLSX_MAX_ROWS rows while
+        // the message promised it was allowed.
+        if (rows.length - 1 > XLSX_MAX_ROWS) {
+          return NextResponse.json(
+            { error: `xlsx export is capped at ${XLSX_MAX_ROWS} rows — use format=csv, which streams` },
+            { status: 413 }
+          );
+        }
+      }
+      if (!page.next) break;
+      cursor = page.next;
+    }
+
+    const { utils, write } = await import("xlsx");
+    const wb = utils.book_new();
+    utils.book_append_sheet(wb, utils.aoa_to_sheet(rows), table.name.slice(0, 31) || "Sheet1");
+    const buf = write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
+
+    return new Response(new Uint8Array(buf), {
+      headers: {
+        "Content-Type":
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "Content-Disposition": `attachment; filename="${stem}.xlsx"`,
+        "Cache-Control": "no-store",
+      },
+    });
+  }
+
+  const isJson = format === "json";
 
   const stream = new ReadableStream({
     async start(controller) {
       try {
-        controller.enqueue(encoder.encode(csvRow(fields.map((f) => f.name))));
+        if (isJson) controller.enqueue(encoder.encode("["));
+        else controller.enqueue(encoder.encode(csvRow(fields.map((f) => f.name))));
 
+        let first = true;
         let cursor = null as QuerySpec["cursor"];
         for (;;) {
           const page = await queryRecords(params.id, { ...spec, limit: PAGE, cursor });
 
           for (const record of page.records) {
-            controller.enqueue(
-              encoder.encode(csvRow(fields.map((f) => record.data[f.key])))
-            );
+            if (isJson) {
+              // Keyed by field KEY, not name. Duplicate names are a SUPPORTED
+              // state (see field-key.ts: "Two columns called 'Name' is not a
+              // mistake — real CSVs do it"), so keying by name would silently
+              // drop columns. Key is also what /api/v1 speaks, so a JSON export
+              // round-trips through the API unchanged.
+              const obj: Record<string, unknown> = {};
+              for (const f of fields) obj[f.key] = record.data[f.key] ?? null;
+              controller.enqueue(
+                encoder.encode(`${first ? "\n" : ",\n"}  ${JSON.stringify(obj)}`)
+              );
+              first = false;
+            } else {
+              controller.enqueue(
+                encoder.encode(csvRow(fields.map((f) => record.data[f.key])))
+              );
+            }
           }
 
           if (!page.next) break;
           cursor = page.next;
         }
 
+        if (isJson) controller.enqueue(encoder.encode("\n]\n"));
         controller.close();
       } catch (e) {
         controller.error(e);
@@ -97,12 +151,10 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     },
   });
 
-  const filename = `${table.name.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}.csv`;
-
   return new Response(stream, {
     headers: {
-      "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": `attachment; filename="${filename}"`,
+      "Content-Type": isJson ? "application/json; charset=utf-8" : "text/csv; charset=utf-8",
+      "Content-Disposition": `attachment; filename="${stem}.${isJson ? "json" : "csv"}"`,
       "Cache-Control": "no-store",
     },
   });

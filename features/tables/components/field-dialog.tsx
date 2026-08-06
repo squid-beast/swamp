@@ -146,6 +146,7 @@ export function FieldDialog({
   // button
   const [action, setAction] = React.useState<"url" | "webhook">("url");
   const [allowMultiple, setAllowMultiple] = React.useState(false);
+  const [rich, setRich] = React.useState(false);
   const [sourceFieldId, setSourceFieldId] = React.useState<string>("");
   const [barcodeFormat, setBarcodeFormat] = React.useState<string>("CODE128");
   const [label, setLabel] = React.useState("");
@@ -185,6 +186,7 @@ export function FieldDialog({
 
     setAction(field?.options.action ?? "url");
     setAllowMultiple(!!field?.options.allowMultiple);
+    setRich(!!field?.options.rich);
     setSourceFieldId(field?.options.sourceFieldId ?? "");
     setBarcodeFormat(field?.options.barcodeFormat ?? "CODE128");
     setLabel(field?.options.label ?? "");
@@ -247,6 +249,7 @@ export function FieldDialog({
         ...(HAS_OPTIONS.has(type) ? { options } : {}),
         ...(type === "currency" ? { currency } : {}),
         ...(type === "user" ? { allowMultiple } : {}),
+        ...(type === "longText" ? { rich } : {}),
         // An unset source is allowed: the cell renders blank until you pick one,
         // which is friendlier than refusing to create the field at all.
         ...(type === "barcode" || type === "qr"
@@ -383,6 +386,22 @@ export function FieldDialog({
               </SelectContent>
             </Select>
           </div>
+
+          {type === "longText" && (
+            <label className="flex items-start gap-2.5">
+              <Checkbox
+                checked={rich}
+                onCheckedChange={(v) => setRich(v === true)}
+                className="mt-0.5"
+              />
+              <span className="flex flex-col">
+                <span className="text-[13px]">Rich text</span>
+                <span className="text-[11px] text-muted-foreground">
+                  Render markdown — bold, links, lists. The value stays plain text.
+                </span>
+              </span>
+            </label>
+          )}
 
           {type === "user" && (
             <label className="flex items-start gap-2.5">

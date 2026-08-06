@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   countRecords,
   deleteRecords,
+  denialResponse,
   getTable,
   insertRecords,
   listFields,
@@ -88,16 +89,24 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   const table = await getTable(params.id);
   if (!table) return NextResponse.json({ error: "not found" }, { status: 404 });
 
-  const { records, errors } = await insertRecords(
-    params.id,
-    table.baseId,
-    parsed.data.records
-  );
-  if (errors.length) {
-    return NextResponse.json({ error: "invalid values", errors }, { status: 400 });
+  try {
+    const { records, errors } = await insertRecords(
+      params.id,
+      table.baseId,
+      parsed.data.records
+    );
+    if (errors.length) {
+      return NextResponse.json({ error: "invalid values", errors }, { status: 400 });
+    }
+    return NextResponse.json({ records });
+  } catch (e) {
+    // A database guard (permissions, base_id mismatch) is a 403 with the
+    // sentence the database wrote — not a bare 500 the grid renders as
+    // "Could not save".
+    const denial = denialResponse(e);
+    if (denial) return denial;
+    throw e;
   }
-
-  return NextResponse.json({ records });
 }
 
 /** Merge values into existing records. Concurrent edits to different cells of the
@@ -114,15 +123,21 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     );
   }
 
-  const { errors, computed } = await updateRecords(params.id, parsed.data.patches);
-  if (errors.length) {
-    return NextResponse.json({ error: "invalid values", errors }, { status: 400 });
-  }
+  try {
+    const { errors, computed } = await updateRecords(params.id, parsed.data.patches);
+    if (errors.length) {
+      return NextResponse.json({ error: "invalid values", errors }, { status: 400 });
+    }
 
-  // `computed` is what the write changed that the client could not have known:
-  // formulas, rollups, lookups, counts, modifiedTime/By, barcodes. Computed keys
-  // only — never the scalars the caller just sent, which would race their typing.
-  return NextResponse.json({ ok: true, computed });
+    // `computed` is what the write changed that the client could not have known:
+    // formulas, rollups, lookups, counts, modifiedTime/By, barcodes. Computed keys
+    // only — never the scalars the caller just sent, which would race their typing.
+    return NextResponse.json({ ok: true, computed });
+  } catch (e) {
+    const denial = denialResponse(e);
+    if (denial) return denial;
+    throw e;
+  }
 }
 
 /** Soft delete. The read path excludes these without the caller asking. */
@@ -138,6 +153,12 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
     );
   }
 
-  await deleteRecords(params.id, parsed.data.ids);
-  return NextResponse.json({ ok: true });
+  try {
+    await deleteRecords(params.id, parsed.data.ids);
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    const denial = denialResponse(e);
+    if (denial) return denial;
+    throw e;
+  }
 }

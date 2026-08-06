@@ -49,18 +49,30 @@ export function groupKeyOf(value: unknown): string {
   return JSON.stringify(value);
 }
 
+/** Composite key for a group at `level`: the per-level keys of the row's values
+ *  up to and including that level, joined on a separator JSON never contains.
+ *  Level 0 of a single-level view is exactly groupKeyOf(value) — the collapse
+ *  state and the counts map from the one-level days keep working unchanged. */
+export function groupPathKey(values: unknown[], level: number): string {
+  let key = groupKeyOf(values[0]);
+  for (let l = 1; l <= level; l += 1) key += "\u0001" + groupKeyOf(values[l]);
+  return key;
+}
+
 function GroupHeader({
   value,
   count,
   collapsed,
   onToggle,
   style,
+  level = 0,
 }: {
   value: unknown;
   count?: number;
   collapsed: boolean;
   onToggle: () => void;
   style: React.CSSProperties;
+  level?: number;
 }) {
   const label =
     value === null || value === undefined || value === ""
@@ -80,6 +92,7 @@ function GroupHeader({
         onClick={onToggle}
         aria-expanded={!collapsed}
         className="sticky left-0 flex items-center gap-1.5 px-3 py-1 text-[12px] font-medium outline-none hover:text-foreground"
+        style={level ? { paddingLeft: 12 + level * 18 } : undefined}
       >
         {collapsed ? (
           <ChevronRight className="size-3.5 text-muted-foreground" />
@@ -153,10 +166,14 @@ export interface GridProps {
   /** Group headers to interleave. Undefined = ungrouped, and every code path below
    *  behaves exactly as it did. */
   groups?: {
-    /** The field the rows are sorted by, so a header goes where the value changes. */
-    fieldKey: string;
-    /** value -> record count, over the FILTERED set. From swamp_group_counts. */
+    /** The fields the rows are sorted by, outermost first (max 3). A header goes
+     *  where any level's value changes. */
+    fieldKeys: string[];
+    /** level-0 key -> record count, over the FILTERED set. From swamp_group_counts.
+     *  ponytail: only the OUTERMOST level shows server counts — deeper levels would
+     *  need one query per expanded parent; add when someone misses them. */
     counts: Map<string, number>;
+    /** Composite path keys (groupPathKey). A collapsed key hides everything under it. */
     collapsed: Set<string>;
     onToggle: (key: string) => void;
   };
@@ -389,21 +406,49 @@ export function Grid(props: GridProps) {
   // enough to notice. If someone collapses a 50k-row group and scrolling gets
   // sticky, that's the upgrade path.
   const items = React.useMemo(() => {
-    const out: ({ kind: "header"; value: unknown; key: string } | { kind: "row"; i: number })[] = [];
-    if (!groups) {
+    const out: (
+      | { kind: "header"; value: unknown; key: string; level: number }
+      | { kind: "row"; i: number }
+    )[] = [];
+    if (!groups || !groups.fieldKeys.length) {
       for (let i = 0; i < records.length; i += 1) out.push({ kind: "row", i });
       return out;
     }
 
-    let last: string | null = null;
+    // Multi-level generalisation of "a new group starts where the value changes":
+    // compare the row's PATH of group values to the previous row's; the first
+    // level that differs re-opens headers for itself and every deeper level. A
+    // collapsed ancestor hides both the rows and the sub-headers beneath it.
+    const levels = groups.fieldKeys;
+    let lastKeys: string[] = [];
+
     for (let i = 0; i < records.length; i += 1) {
-      const value = records[i].data[groups.fieldKey];
-      const key = groupKeyOf(value);
-      if (key !== last) {
-        out.push({ kind: "header", value, key });
-        last = key;
+      const values = levels.map((k) => records[i].data[k]);
+      const keys = levels.map((_, l) => groupPathKey(values, l));
+
+      let changedAt = -1;
+      for (let l = 0; l < levels.length; l += 1) {
+        if (keys[l] !== lastKeys[l]) {
+          changedAt = l;
+          break;
+        }
       }
-      if (!groups.collapsed.has(key)) out.push({ kind: "row", i });
+
+      if (changedAt >= 0) {
+        for (let l = changedAt; l < levels.length; l += 1) {
+          // A header is shown only when no STRICT ancestor is collapsed.
+          const hiddenByAncestor = keys
+            .slice(0, l)
+            .some((k) => groups.collapsed.has(k));
+          if (!hiddenByAncestor) {
+            out.push({ kind: "header", value: values[l], key: keys[l], level: l });
+          }
+        }
+        lastKeys = keys;
+      }
+
+      // The row shows only when NO level of its path is collapsed.
+      if (!keys.some((k) => groups.collapsed.has(k))) out.push({ kind: "row", i });
     }
     return out;
   }, [records, groups]);
@@ -552,7 +597,8 @@ export function Grid(props: GridProps) {
             const item = items[v.index];
 
             if (item.kind === "header") {
-              const count = groups?.counts.get(item.key);
+              // Server counts exist for the outermost level only (see GridProps).
+              const count = item.level === 0 ? groups?.counts.get(item.key) : undefined;
               const isCollapsed = !!groups?.collapsed.has(item.key);
               return (
                 <GroupHeader
@@ -560,6 +606,7 @@ export function Grid(props: GridProps) {
                   value={item.value}
                   count={count}
                   collapsed={isCollapsed}
+                  level={item.level}
                   onToggle={() => groups?.onToggle(item.key)}
                   style={{ height: v.size, transform: `translateY(${v.start}px)` }}
                 />

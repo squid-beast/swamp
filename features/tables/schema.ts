@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { BARCODE_FORMATS, FIELD_TYPES, TOKEN_SCOPES, WEBHOOK_EVENTS, WEBHOOK_KINDS } from "./types";
+import { BARCODE_FORMATS, FIELD_TYPES, FILTER_OPS, TOKEN_SCOPES, WEBHOOK_EVENTS, WEBHOOK_KINDS } from "./types";
 
 // ════════════════════════════════════════════════════════════════════════════
 // Wire schemas. Everything a client can send, validated before it reaches the
@@ -27,6 +27,9 @@ export const fieldOptionsSchema = z
     currency: z.string(),
     precision: z.number().int().min(0).max(8),
     max: z.number().int().min(1).max(10),
+
+    // longText — markdown display mode
+    rich: z.boolean(),
 
     // user
     allowMultiple: z.boolean(),
@@ -66,26 +69,7 @@ export const fieldOptionsSchema = z
 
 // ─── Filter tree ────────────────────────────────────────────────────────────
 
-export const filterOpSchema = z.enum([
-  "eq",
-  "neq",
-  "gt",
-  "gte",
-  "lt",
-  "lte",
-  "btw",
-  "like",
-  "nlike",
-  "empty",
-  "notempty",
-  "anyof",
-  "nanyof",
-  "allof",
-  "nallof",
-  "checked",
-  "notchecked",
-  "isWithin",
-]);
+export const filterOpSchema = z.enum(FILTER_OPS);
 
 export const dateSubOpSchema = z.enum([
   "today",
@@ -114,6 +98,8 @@ export const filterLeafSchema = z.object({
   value: z.unknown().optional(),
   subOp: dateSubOpSchema.optional(),
   n: z.number().int().optional(),
+  /** Field-to-field comparison: a field KEY to read the right-hand side from. */
+  valueField: z.string().min(1).optional(),
 });
 
 /**
@@ -302,33 +288,71 @@ export const webhookUrlSchema = z
   .max(2000)
   .refine((u) => /^https?:\/\//i.test(u), { message: "URL must be http or https" });
 
+/** Per-kind settings. email is the only kind with required config today. */
+export const webhookConfigSchema = z
+  .object({
+    to: z.string().trim().email().max(320),
+  })
+  .partial()
+  .strict();
+
+/** email has no URL; every other kind requires one. One rule, both schemas. */
+const kindUrlRule = (b: { kind?: string; url?: string | null }, ctx: z.RefinementCtx) => {
+  if (b.kind === "email") {
+    if (b.url != null) {
+      ctx.addIssue({ code: "custom", path: ["url"], message: "An email webhook has no URL" });
+    }
+  } else if ("kind" in b || "url" in b) {
+    // On create, a non-email kind must carry a URL. On update this only fires
+    // when the caller touches kind/url — a partial patch of `name` stays legal.
+    if (b.url == null && "url" in b) {
+      ctx.addIssue({ code: "custom", path: ["url"], message: "A URL is required" });
+    }
+  }
+};
+
 export const createWebhookSchema = z
   .object({
     name: z.string().trim().min(1).max(120),
-    url: webhookUrlSchema,
+    url: webhookUrlSchema.nullish(),
     tableId: z.string().uuid().nullish(),
     events: z.array(z.enum(WEBHOOK_EVENTS)).min(1),
     fieldIds: z.array(z.string().uuid()).max(50).optional(),
     condition: boundedFilterSchema.nullish(),
     kind: z.enum(WEBHOOK_KINDS).optional(),
     template: z.string().max(4000).nullish(),
+    config: webhookConfigSchema.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((b, ctx) => {
+    if (b.kind === "email") {
+      if (b.url != null) {
+        ctx.addIssue({ code: "custom", path: ["url"], message: "An email webhook has no URL" });
+      }
+      if (!b.config?.to) {
+        ctx.addIssue({ code: "custom", path: ["config", "to"], message: "A recipient is required" });
+      }
+    } else if (b.url == null) {
+      ctx.addIssue({ code: "custom", path: ["url"], message: "A URL is required" });
+    }
+  });
 
 export const updateWebhookSchema = z
   .object({
     name: z.string().trim().min(1).max(120),
-    url: webhookUrlSchema,
+    url: webhookUrlSchema.nullable(),
     events: z.array(z.enum(WEBHOOK_EVENTS)).min(1),
     fieldIds: z.array(z.string().uuid()).max(50),
     condition: boundedFilterSchema.nullable(),
     kind: z.enum(WEBHOOK_KINDS),
     template: z.string().max(4000).nullable(),
+    config: webhookConfigSchema,
     active: z.boolean(),
   })
   .partial()
   .strict()
-  .refine((b) => Object.keys(b).length > 0, { message: "Nothing to update" });
+  .refine((b) => Object.keys(b).length > 0, { message: "Nothing to update" })
+  .superRefine(kindUrlRule);
 
 export const uploadRequestSchema = z
   .object({

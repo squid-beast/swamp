@@ -107,6 +107,17 @@ describe("numeric summaries", () => {
     expect(Number((await agg({}, { fld_amount: "median" })).fld_amount)).toBe(30);
   });
 
+  it("computes range and std_dev (Phase-2 additions)", async () => {
+    // Amounts are 10..50 step 10: range 40, sample stddev √250 ≈ 15.81.
+    expect(Number((await agg({}, { fld_amount: "range" })).fld_amount)).toBe(40);
+    expect(Number((await agg({}, { fld_amount: "std_dev" })).fld_amount)).toBeCloseTo(15.81, 1);
+  });
+
+  it("computes percent_unique on any type", async () => {
+    // 5 distinct names over 5 rows.
+    expect(Number((await agg({}, { fld_name: "percent_unique" })).fld_name)).toBe(100);
+  });
+
   it("returns a value per requested field in one call", async () => {
     const values = await agg({}, { fld_amount: "sum", fld_name: "count" });
     expect(Number(values.fld_amount)).toBe(150);

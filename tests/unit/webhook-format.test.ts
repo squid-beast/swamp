@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildDeliveryBody,
   defaultMessage,
+  emailContent,
   renderTemplate,
 } from "@/features/tables/webhook-format";
 
@@ -89,5 +90,46 @@ describe("buildDeliveryBody", () => {
     const long = "y".repeat(5000);
     const body = JSON.parse(buildDeliveryBody("slack", long, payload));
     expect(body.text.length).toBe(3000);
+  });
+});
+
+describe("Phase-3 kinds", () => {
+  const payload = {
+    event: "record.created",
+    record: { id: "r1", fields: { fld_name: "Acme" } },
+  };
+
+  it("mattermost takes Slack's { text } shape verbatim", () => {
+    const body = JSON.parse(buildDeliveryBody("mattermost", null, payload));
+    expect(typeof body.text).toBe("string");
+    expect(body.text).toContain("Acme");
+  });
+
+  it("teams sends an Adaptive Card envelope, never bare { text }", () => {
+    // The legacy O365 connector shape gets a 200 and renders NOTHING in the
+    // new Workflows webhooks — this asserts we never regress to it.
+    const body = JSON.parse(buildDeliveryBody("teams", null, payload));
+    expect(body.type).toBe("message");
+    expect(body.text).toBeUndefined();
+    const card = body.attachments[0];
+    expect(card.contentType).toBe("application/vnd.microsoft.card.adaptive");
+    expect(card.content.type).toBe("AdaptiveCard");
+    expect(card.content.body[0].text).toContain("Acme");
+  });
+
+  it("email body is the plain rendered message, not JSON", () => {
+    const body = buildDeliveryBody("email", "Lead: {{fields.fld_name}}", payload);
+    expect(body).toBe("Lead: Acme");
+  });
+
+  it("emailContent subject is the first line, capped", () => {
+    const { subject, text } = emailContent("New lead\n{{fields.fld_name}}", payload);
+    expect(subject).toBe("New lead");
+    expect(text).toBe("New lead\nAcme");
+  });
+
+  it("emailContent falls back to a sane subject on an empty template", () => {
+    const { subject } = emailContent("   \nbody", payload);
+    expect(subject.length).toBeGreaterThan(0);
   });
 });

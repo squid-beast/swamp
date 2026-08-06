@@ -551,3 +551,141 @@ describe("member profiles", () => {
     expect(data).toEqual([]);
   });
 });
+
+// ─── Phase-6: mention notifications + reactions ─────────────────────────────
+
+describe("mention notifications", () => {
+  it("a mention writes exactly one notification, to the mentioned user, readable only by them", async () => {
+    // Alice comments mentioning Bob. The SECURITY DEFINER trigger writes the
+    // notification — notifications has NO insert policy for anyone.
+    must(
+      await alice.db.from("comments").insert({
+        base_id: baseId, table_id: tableId, record_id: recordId,
+        author_id: alice.id, body: `Hey <@${bob.id}> look at this`,
+        mentions: [bob.id],
+      })
+    );
+
+    const bobSees = await bob.db
+      .from("notifications")
+      .select("id, type, payload, user_id")
+      .eq("type", "mention");
+    expect(bobSees.error).toBeNull();
+    expect(bobSees.data!.length).toBe(1);
+    expect(bobSees.data![0].user_id).toBe(bob.id);
+    expect((bobSees.data![0].payload as { recordId: string }).recordId).toBe(recordId);
+
+    // Alice mentioned him — she does NOT see his notification.
+    const aliceSees = await alice.db.from("notifications").select("id");
+    expect(aliceSees.data ?? []).toHaveLength(0);
+  });
+
+  it("editing a comment re-notifies only NEWLY mentioned users", async () => {
+    const comment = must(
+      await alice.db
+        .from("comments")
+        .insert({
+          base_id: baseId, table_id: tableId, record_id: recordId,
+          author_id: alice.id, body: "draft", mentions: [bob.id],
+        })
+        .select()
+        .single()
+    ) as { id: string };
+
+    const before = await bob.db.from("notifications").select("id");
+    const countBefore = before.data!.length;
+
+    // Edit that KEEPS the same mentions — no new notification.
+    must(
+      await alice.db
+        .from("comments")
+        .update({ body: "draft v2", mentions: [bob.id] })
+        .eq("id", comment.id)
+    );
+
+    const after = await bob.db.from("notifications").select("id");
+    expect(after.data!.length).toBe(countBefore);
+  });
+
+  it("a client cannot forge a notification", async () => {
+    const { error } = await bob.db.from("notifications").insert({
+      user_id: bob.id,
+      base_id: baseId,
+      type: "mention",
+      payload: {},
+    });
+    expect(error).not.toBeNull();
+  });
+
+  it("only read_at is updatable — the payload is pinned by trigger", async () => {
+    const { data: mine } = await bob.db.from("notifications").select("id").limit(1);
+    const id = mine![0].id;
+
+    const readOk = await bob.db
+      .from("notifications")
+      .update({ read_at: new Date().toISOString() })
+      .eq("id", id);
+    expect(readOk.error).toBeNull();
+
+    const forged = await bob.db
+      .from("notifications")
+      .update({ payload: { snippet: "gaslight" } })
+      .eq("id", id);
+    expect(forged.error).not.toBeNull();
+  });
+});
+
+describe("comment reactions", () => {
+  let commentId: string;
+
+  beforeAll(async () => {
+    const created = must(
+      await alice.db
+        .from("comments")
+        .insert({
+          base_id: baseId, table_id: tableId, record_id: recordId,
+          author_id: alice.id, body: "react to me",
+        })
+        .select()
+        .single()
+    ) as { id: string };
+    commentId = created.id;
+  });
+
+  it("a commenter can react; reacting is refused below commenter", async () => {
+    // Bob is a commenter (set in the comments block above).
+    const ok = await bob.db.from("comment_reactions").insert({
+      comment_id: commentId, user_id: bob.id, base_id: baseId, emoji: "👍",
+    });
+    expect(ok.error).toBeNull();
+
+    // Demote to viewer: the insert must now fail.
+    must(
+      await alice.db
+        .from("base_members")
+        .update({ role: "viewer" })
+        .eq("base_id", baseId)
+        .eq("user_id", bob.id)
+    );
+    const refused = await bob.db.from("comment_reactions").insert({
+      comment_id: commentId, user_id: bob.id, base_id: baseId, emoji: "🎉",
+    });
+    expect(refused.error).not.toBeNull();
+
+    // Restore for any later tests.
+    must(
+      await alice.db
+        .from("base_members")
+        .update({ role: "commenter" })
+        .eq("base_id", baseId)
+        .eq("user_id", bob.id)
+    );
+  });
+
+  it("you cannot react AS someone else", async () => {
+    const { error } = await bob.db.from("comment_reactions").insert({
+      comment_id: commentId, user_id: alice.id, base_id: baseId, emoji: "👀",
+    });
+    expect(error).not.toBeNull();
+  });
+});

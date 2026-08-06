@@ -29,3 +29,7 @@ export async function POST(req: NextRequest) {
   const result = await collectGarbage(createServiceClient(), grace);
   return NextResponse.json(result);
 }
+
+// Vercel Cron invokes with GET. Without this line every scheduled invocation
+// 405'd — the job never ran. The guard reads a header, not the verb.
+export const GET = POST;

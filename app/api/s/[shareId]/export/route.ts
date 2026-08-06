@@ -4,6 +4,7 @@ import {
   getSharedRecords,
   PasswordRequired,
 } from "@/features/tables/sharing";
+import { csvRow } from "@/features/tables/csv";
 
 // CSV export of a shared view — only if the owner allowed it.
 //
@@ -12,18 +13,11 @@ import {
 // path that could accidentally include a hidden column.
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 300;
+// 60 is Vercel Hobby's ceiling — 300 requires Pro and silently clamps on Hobby.
+export const maxDuration = 60;
 
 const PAGE = 500;
 
-function csvCell(value: unknown): string {
-  if (value == null) return "";
-  const s = Array.isArray(value) ? value.join(", ") : String(value);
-  if (!/[",\n\r]/.test(s)) return s;
-  return `"${s.replace(/"/g, '""')}"`;
-}
-
-const csvRow = (cells: unknown[]) => cells.map(csvCell).join(",") + "\r\n";
 
 export async function GET(req: NextRequest, { params }: { params: { shareId: string } }) {
   const password =

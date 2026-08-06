@@ -61,6 +61,31 @@ export function fail(
   throw e;
 }
 
+/**
+ * A denial raised by a database guard, as an HTTP response.
+ *
+ * Session routes let `fail()` throw, which Next renders as a bare 500 — so a
+ * permission denial ("you may not edit Salary") reached the grid as "Could not
+ * save". The token API already maps 42501 → 403 in rest.ts apiError; this is the
+ * session-side twin. Returns null when the error is not a denial, so callers can
+ * rethrow and keep the 500 for genuine faults.
+ */
+export function denialResponse(e: unknown): Response | null {
+  const code = (e as { code?: string })?.code;
+  if (code !== "42501" && code !== "23514") return null;
+
+  // Strip the `context: ` prefix fail() adds, and the `swamp: ` marker, so the
+  // user sees the sentence the database wrote for them.
+  const message = String((e as Error).message ?? "")
+    .replace(/^[^:]+:\s*/, "")
+    .replace(/^swamp:\s*/, "");
+
+  return new Response(JSON.stringify({ error: message || "not allowed" }), {
+    status: 403,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
 // ─── Mapping ────────────────────────────────────────────────────────────────
 // The database speaks snake_case; the domain speaks camelCase. Mapping happens
 // exactly here, once, so nothing above this file ever sees a `sort_order`.

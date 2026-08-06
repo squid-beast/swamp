@@ -1,6 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import localFont from "next/font/local";
-import { Bricolage_Grotesque, JetBrains_Mono } from "next/font/google";
+import { Inter, Manrope, DM_Mono } from "next/font/google";
 import "./globals.css";
 import { cn } from "@/shared/lib/utils";
 import { ThemeProvider } from "@/shared/components/theme-provider";
@@ -10,27 +9,26 @@ import { ConsentAnalytics } from "@/features/marketing/components/consent-analyt
 import { SITE } from "@/shared/seo/site";
 import { JsonLd, organizationSchema, websiteSchema } from "@/shared/seo/jsonld";
 
-// Body: Selawik, bundled OFL woff2 locally. Fallback "Segoe UI", system-ui.
-const selawik = localFont({
-  src: [
-    { path: "./fonts/Selawik-Light.woff2", weight: "300", style: "normal" },
-    { path: "./fonts/Selawik-Regular.woff2", weight: "400", style: "normal" },
-    { path: "./fonts/Selawik-Bold.woff2", weight: "700", style: "normal" },
-  ],
+// NocoDB's type stack, self-hosted via next/font: Inter for body (the cv01/ss01
+// feature settings in globals.css are Inter's alternates), Manrope for display,
+// DM Mono for data.
+const sans = Inter({
+  subsets: ["latin"],
   variable: "--font-sans",
   display: "swap",
   fallback: ["Segoe UI", "system-ui", "sans-serif"],
 });
 
-// Display: Bricolage Grotesque — heavy, characterful grotesque for headings.
-const display = Bricolage_Grotesque({
+const display = Manrope({
   subsets: ["latin"],
   variable: "--font-display",
   display: "swap",
 });
 
-const mono = JetBrains_Mono({
+// DM Mono ships only 300/400/500 — no bold weight exists.
+const mono = DM_Mono({
   subsets: ["latin"],
+  weight: ["300", "400", "500"],
   variable: "--font-mono",
   display: "swap",
 });
@@ -89,7 +87,7 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={cn(selawik.variable, display.variable, mono.variable)}
+      className={cn(sans.variable, display.variable, mono.variable)}
     >
       <head>
         {/* Site-wide, so every page carries it. The per-page schemas (breadcrumbs,

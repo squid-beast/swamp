@@ -225,3 +225,53 @@ describe("renderFormula", () => {
     expect(renderFormula(ast, new Map())).toBe("{deleted field}");
   });
 });
+
+describe("NocoDB-parity library additions", () => {
+  // Each name must exist with a workable arity — a missing FUNCTION_MAP entry
+  // makes these parses throw. The VALUES are asserted in
+  // tests/integration/relational.test.ts, where the SQL arm actually runs.
+  const calls = [
+    'SWITCH("a", "a", 1, 2)',
+    "XOR(true, false)",
+    'REPEAT("ab", 2)',
+    'URLENCODE("a b")',
+    'REGEX_MATCH("abc", "b")',
+    'REGEX_EXTRACT("abc", "b")',
+    'REGEX_REPLACE("abc", "b", "x")',
+    'MD5("abc")',
+    "EVEN(1)",
+    "ODD(2)",
+    "ROUNDDOWN(1.9)",
+    "ROUNDUP(1.1, 0)",
+    "INT(1.7)",
+    'VALUE("12")',
+    "LOG(100)",
+    "LOG(8, 2)",
+    "EXP(1)",
+    "ARRAYUNIQUE({Amount})",
+    "ARRAYSORT({Amount})",
+    "ARRAYCOMPACT({Amount})",
+    "ARRAYSLICE({Amount}, 1, 2)",
+    "COUNTA({Amount}, {Quantity})",
+    "COUNT({Amount})",
+    "COUNTALL({Amount})",
+    'DATETIME_DIFF({Amount}, {Quantity}, "days")',
+    "HOUR({Amount})",
+    "MINUTE({Amount})",
+    "SECOND({Amount})",
+  ];
+
+  for (const src of calls) {
+    it(`parses ${src}`, () => {
+      expect(() => parse(src)).not.toThrow();
+    });
+  }
+
+  it("still rejects an unknown function", () => {
+    expect(() => parse("NOTAFUNCTION(1)")).toThrow(FormulaError);
+  });
+
+  it("rejects SWITCH with too few arguments", () => {
+    expect(() => parse('SWITCH("a", "b")')).toThrow(FormulaError);
+  });
+});

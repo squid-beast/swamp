@@ -18,11 +18,26 @@ import type {
   ViewConfigData,
 } from "../types";
 import { canEditViewConfig, COMPUTED_FIELD_TYPES } from "../types";
+import dynamic from "next/dynamic";
 import { Grid, groupKeyOf } from "./grid";
 import { Gallery } from "./gallery";
 import { Kanban } from "./kanban";
 import { Calendar } from "./calendar";
+import { ListView } from "./list";
+import { Timeline } from "./timeline";
 import { FormBuilder } from "./form-builder";
+
+// Leaflet touches `window` at import time — SSR would crash — and weighs ~52 kB
+// gz. dynamic({ssr:false}) solves both: its chunk loads only when a map view is
+// actually opened, costing every other route nothing.
+const MapView = dynamic(() => import("./map-view"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex flex-1 items-center justify-center text-[13px] text-muted-foreground">
+      Loading map…
+    </div>
+  ),
+});
 import { Toolbar, type RowHeight } from "./toolbar";
 import { ViewMenu } from "./view-menu";
 import { FieldDialog } from "./field-dialog";
@@ -114,39 +129,43 @@ export function TableWorkspace({
     return () => clearTimeout(t);
   }, [search]);
 
-  /** The field this view groups by, if any. One level for now — the model carries
-   *  group_by_order for three, like NocoDB, and the day a second level is wanted the
-   *  sort below just gets another entry. */
-  const groupBy = React.useMemo(() => {
-    const vf = config.viewFields
+  /** The fields this view groups by, outermost first. The model carries
+   *  group_by_order for three levels, like NocoDB; the sort below gets one entry
+   *  per level and the grid nests headers by the path of values. */
+  const groupBys = React.useMemo(() => {
+    return config.viewFields
       .filter((v) => v.groupBy)
-      .sort((a, b) => (a.groupByOrder ?? 0) - (b.groupByOrder ?? 0))[0];
-    if (!vf) return null;
-
-    const field = fields.find((f) => f.id === vf.fieldId);
-    return field ? { field, dir: vf.groupByDir ?? ("asc" as const) } : null;
+      .sort((a, b) => (a.groupByOrder ?? 0) - (b.groupByOrder ?? 0))
+      .slice(0, 3)
+      .flatMap((vf) => {
+        const field = fields.find((f) => f.id === vf.fieldId);
+        return field ? [{ field, dir: vf.groupByDir ?? ("asc" as const) }] : [];
+      });
   }, [config.viewFields, fields]);
+
+  const groupBy = groupBys[0] ?? null;
 
   const spec: QuerySpec = React.useMemo(
     () => ({
       ...(config.filter ? { filter: config.filter } : {}),
-      // Grouping IS a sort, and it goes first.
+      // Grouping IS a sort, and it goes first — one entry per level, outermost
+      // first.
       //
       // That is the whole trick: rows then arrive grouped, contiguously, and the
       // keyset cursor works over it unchanged because the compiler builds the cursor
       // generically from whatever is in `sort`. The grid puts a header wherever the
       // value changes. No engine change, no pagination-within-groups problem.
-      ...(groupBy || config.sorts.length
+      ...(groupBys.length || config.sorts.length
         ? {
             sort: [
-              ...(groupBy ? [{ field: groupBy.field.key, dir: groupBy.dir }] : []),
+              ...groupBys.map((g) => ({ field: g.field.key, dir: g.dir })),
               ...config.sorts,
             ],
           }
         : {}),
       ...(debounced ? { search: debounced } : {}),
     }),
-    [config.filter, config.sorts, debounced, groupBy]
+    [config.filter, config.sorts, debounced, groupBys]
   );
 
   const {
@@ -413,19 +432,23 @@ export function TableWorkspace({
    *  signature now, but sending the whole set is also what makes "only one field is
    *  grouped" true rather than hoped for: the previous grouped field is explicitly
    *  turned off rather than left behind. */
-  const setGroupBy = (next: { fieldId: string; dir: "asc" | "desc" } | null) => {
+  const setGroupBys = (next: { fieldId: string; dir: "asc" | "desc" }[]) => {
     // Collapse state is keyed by GROUP VALUE, and the values change completely when
     // you group by a different field. Keeping it would silently collapse unrelated
     // groups that happened to share a key.
     setCollapsed(new Set());
 
+    const byId = new Map(next.map((g, i) => [g.fieldId, { order: i, dir: g.dir }]));
     void patchConfig({
-      viewFields: fields.map((f) => ({
-        fieldId: f.id,
-        groupBy: next?.fieldId === f.id,
-        groupByOrder: next?.fieldId === f.id ? 0 : null,
-        groupByDir: next?.fieldId === f.id ? next.dir : null,
-      })),
+      viewFields: fields.map((f) => {
+        const g = byId.get(f.id);
+        return {
+          fieldId: f.id,
+          groupBy: !!g,
+          groupByOrder: g ? g.order : null,
+          groupByDir: g ? g.dir : null,
+        };
+      }),
     });
   };
 
@@ -485,18 +508,60 @@ export function TableWorkspace({
     await patchView({ config });
   };
 
+  const setColorRules = async (rules: { filter: FilterNode; color: string }[]) => {
+    const config = { ...view.config, rowColorRules: rules.length ? rules : undefined };
+    setView((v) => ({ ...v, config }));
+    await patchView({ config });
+  };
+
   const colorField = view.config.colorFieldId
     ? fields.find((f) => f.id === view.config.colorFieldId)
     : null;
 
-  // Returns the palette name of the row's option, which the grid maps to a stripe.
+  // Conditional colour RULES, evaluated in SQL over the loaded page. Refetched
+  // when the page's ids or the rules change; first matching rule wins server-side.
+  const colorRules = view.config.rowColorRules;
+  const [ruleColors, setRuleColors] = React.useState<Record<string, string>>({});
+  const ruleColorsKey = JSON.stringify({
+    r: colorRules,
+    ids: records.map((r) => r.id),
+  });
+
+  React.useEffect(() => {
+    if (!colorRules?.length || !records.length) {
+      setRuleColors({});
+      return;
+    }
+
+    let alive = true;
+    void fetch(`/api/tables/${table.id}/colors`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ recordIds: records.map((r) => r.id), rules: colorRules }),
+    })
+      .then((r) => (r.ok ? r.json() : { colors: {} }))
+      .then((b: { colors?: Record<string, string> }) => {
+        if (alive) setRuleColors(b.colors ?? {});
+      })
+      .catch(() => alive && setRuleColors({}));
+
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ruleColorsKey, table.id]);
+
+  // Returns the palette name for the row's stripe. Rules first (first match wins,
+  // decided in SQL); the select-option tint is the fallback.
   const rowColor = React.useCallback(
     (record: (typeof records)[number]) => {
+      const ruled = ruleColors[record.id];
+      if (ruled) return ruled;
       if (!colorField) return null;
       const value = record.data[colorField.key];
       return colorField.options.options?.find((o) => o.value === value)?.color ?? null;
     },
-    [colorField]
+    [colorField, ruleColors]
   );
 
   const reloadFields = React.useCallback(async () => {
@@ -539,11 +604,28 @@ export function TableWorkspace({
     ? fields.find((f) => f.id === view.config.coverFieldId)
     : fields.find((f) => f.type === "image" || f.type === "attachment");
 
-  // A calendar puts records on days via a date field. Fall back to the first date
-  // field, so a calendar created without config still opens.
+  // A calendar/timeline/gantt puts records on days via a date field. Fall back to
+  // the first date field, so a view created without config still opens.
   const dateField = view.config.ranges?.[0]?.fromFieldId
     ? fields.find((f) => f.id === view.config.ranges![0].fromFieldId)
     : fields.find((f) => f.type === "date" || f.type === "datetime");
+
+  const toDateField = view.config.ranges?.[0]?.toFieldId
+    ? fields.find((f) => f.id === view.config.ranges![0].toFieldId)
+    : undefined;
+
+  const coordField = view.config.coordFieldId
+    ? fields.find((f) => f.id === view.config.coordFieldId)
+    : fields.find((f) => f.type === "coordinates");
+
+  // Gantt dependencies: the configured link field, or the table's first
+  // SELF-referential link. The catalog already resolves it into record.data.
+  const dependencyField =
+    view.type === "gantt"
+      ? view.config.dependencyFieldId
+        ? fields.find((f) => f.id === view.config.dependencyFieldId)
+        : fields.find((f) => f.type === "link" && f.options.targetTableId === table.id)
+      : undefined;
 
   const collapsedStacks = new Set(
     (view.config.stacks ?? []).filter((s) => s.collapsed).map((s) => s.id)
@@ -580,12 +662,14 @@ export function TableWorkspace({
         hidden={hidden}
         onHiddenChange={setHidden}
         onReorder={setFieldOrder}
-        groupBy={groupBy ? { fieldId: groupBy.field.id, dir: groupBy.dir } : null}
-        onGroupByChange={setGroupBy}
+        groupBys={groupBys.map((g) => ({ fieldId: g.field.id, dir: g.dir }))}
+        onGroupBysChange={setGroupBys}
         rowHeight={rowHeight}
         onRowHeightChange={setRowHeight}
         colorFieldId={view.config.colorFieldId ?? null}
         onColorFieldChange={setColorField}
+        colorRules={view.config.rowColorRules ?? []}
+        onColorRulesChange={setColorRules}
         presence={presence}
         search={search}
         onSearchChange={setSearch}
@@ -691,6 +775,42 @@ export function TableWorkspace({
             if (row >= 0 && col >= 0) grid.setCell(row, col, date);
           }}
         />
+      ) : view.type === "list" ? (
+        <ListView
+          fields={orderedFields}
+          hidden={hidden}
+          records={records}
+          onExpand={setExpandedId}
+          onLoadMore={loadMore}
+          hasMore={!!cursor}
+          loadingMore={loadingMore}
+        />
+      ) : (view.type === "timeline" || view.type === "gantt") && dateField ? (
+        <Timeline
+          fields={orderedFields}
+          records={records}
+          fromField={dateField}
+          toField={toDateField}
+          dependencyField={dependencyField}
+          onExpand={setExpandedId}
+          onSetDate={(id, patch) => {
+            // Route through the grid's setCell so a re-drag is an undoable
+            // command — one setCell per changed field.
+            const row = records.findIndex((r) => r.id === id);
+            if (row < 0) return;
+            for (const [key, value] of Object.entries(patch)) {
+              const col = visibleFields.findIndex((f) => f.key === key);
+              if (col >= 0) grid.setCell(row, col, value);
+            }
+          }}
+        />
+      ) : view.type === "map" && coordField ? (
+        <MapView
+          fields={orderedFields}
+          records={records}
+          coordField={coordField}
+          onExpand={setExpandedId}
+        />
       ) : view.type === "form" ? (
         <FormBuilder
           fields={orderedFields}
@@ -728,9 +848,9 @@ export function TableWorkspace({
           // refetch rather than guess.
           onLinksChanged={reload}
           groups={
-            groupBy
+            groupBys.length
               ? {
-                  fieldKey: groupBy.field.key,
+                  fieldKeys: groupBys.map((g) => g.field.key),
                   counts: groupCounts,
                   collapsed,
                   onToggle: (key) =>

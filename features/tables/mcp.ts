@@ -1,6 +1,7 @@
 import "server-only";
 import {
   apiDelete,
+  apiAggregate,
   apiGet,
   apiInsert,
   apiMeta,
@@ -152,6 +153,33 @@ export const MCP_TOOLS = [
     },
   },
   {
+    name: "aggregate",
+    description:
+      "Column summaries over the records matching an optional `search` and `filter` — " +
+      "sum, avg, min, max, median, std_dev, range, count variants, percent variants, " +
+      "earliest/latest/date_range for dates. `aggregations` maps a field KEY (from " +
+      "describe_table) to a summary name. Far cheaper than fetching rows to add them " +
+      "up yourself. Needs records:read.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        tableId: { type: "string" },
+        search: { type: "string" },
+        filter: {
+          type: "object",
+          description: "A Swamp filter tree, same shape as query_records.",
+        },
+        aggregations: {
+          type: "object",
+          description: 'e.g. { "fld_amount": "sum", "fld_name": "count_unique" }',
+          additionalProperties: { type: "string" },
+        },
+      },
+      required: ["tableId", "aggregations"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "create_records",
     description:
       "Create one or more records. Each is { fields: { <fieldKey>: value } }; " +
@@ -273,6 +301,29 @@ async function runTool(token: string, name: string, args: Args): Promise<ToolRes
         const recordId = str(args.recordId);
         if (!tableId || !recordId) throw new McpBadParams("tableId and recordId are required");
         return ok(await apiGet(token, tableId, recordId));
+      }
+
+      case "aggregate": {
+        const tableId = str(args.tableId);
+        if (!tableId) throw new McpBadParams("tableId is required");
+        const aggs = args.aggregations;
+        if (!aggs || typeof aggs !== "object" || Array.isArray(aggs)) {
+          throw new McpBadParams("aggregations must be an object of { fieldKey: summaryName }");
+        }
+        const parsed = querySpecSchema.safeParse({ filter: args.filter, search: args.search });
+        if (!parsed.success) {
+          throw new McpBadParams(parsed.error.issues.map((i) => i.message).join("; "));
+        }
+        // The SQL side whitelists both the field keys (catalog) and the summary
+        // names (fixed templates) — an unknown name raises before reaching SQL.
+        return ok({
+          values: await apiAggregate(
+            token,
+            tableId,
+            parsed.data,
+            aggs as Record<string, string>
+          ),
+        });
       }
 
       case "create_records": {

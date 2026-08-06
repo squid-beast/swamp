@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/shared/ui/button";
 import { cn } from "@/shared/lib/utils";
 import type { Field, Record_ } from "../types";
+import { localDate, sameDay, toDateString } from "../local-date";
 
 // ════════════════════════════════════════════════════════════════════════════
 // Calendar.
@@ -20,28 +21,8 @@ import type { Field, Record_ } from "../types";
 // localDate(), which reads a bare YYYY-MM-DD as a LOCAL day.
 // ════════════════════════════════════════════════════════════════════════════
 
-/** Parse a bare date string as a LOCAL day, not a UTC instant. */
-function localDate(value: unknown): Date | null {
-  if (value == null || value === "") return null;
-
-  const s = String(value);
-  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
-  if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-
-  const d = new Date(s);
-  return Number.isNaN(d.getTime()) ? null : d;
-}
-
-const sameDay = (a: Date, b: Date) =>
-  a.getFullYear() === b.getFullYear() &&
-  a.getMonth() === b.getMonth() &&
-  a.getDate() === b.getDate();
-
-/** YYYY-MM-DD in LOCAL time. `toISOString()` would shift the day across midnight. */
-function toDateString(d: Date): string {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
+// Date helpers live in ../local-date so the timeline/gantt views share the
+// exact same local-day parsing instead of rediscovering the UTC bug above.
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 

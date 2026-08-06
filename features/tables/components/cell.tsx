@@ -12,6 +12,7 @@ import {
 } from "@/shared/ui/dropdown-menu";
 import { formatAutoNumber, isReadOnlyField, type Field } from "../types";
 import { LinkCell } from "./link-cell";
+import { Markdown } from "./markdown";
 import { AttachmentCell } from "./attachment-cell";
 import { ButtonCell } from "./button-cell";
 import { UserCell } from "./user-cell";
@@ -146,6 +147,7 @@ export function CellView({
           onChange={onChange}
           editing={editing}
           onEditingChange={onEditingChange}
+          rich={!!field.options?.rich}
         />
       );
     case "boolean":
@@ -296,7 +298,13 @@ function formatDisplay(field: Field, value: unknown): string {
 //      record passes neither, so there a click opens the textarea in place —
 //      otherwise long text would be read-only in the one place you go to read it.
 
-function LongTextCell({ value, onChange, editing, onEditingChange }: Omit<CellProps, "field">) {
+function LongTextCell({
+  value,
+  onChange,
+  editing,
+  onEditingChange,
+  rich,
+}: Omit<CellProps, "field"> & { rich?: boolean }) {
   const selfManaged = onEditingChange === undefined;
   const [focused, setFocused] = React.useState(false);
   const open = !!editing || (selfManaged && focused);
@@ -313,6 +321,8 @@ function LongTextCell({ value, onChange, editing, onEditingChange }: Omit<CellPr
   };
 
   if (!open) {
+    // Rich mode renders the markdown; the EDITOR stays a plain textarea either
+    // way. Display mode, not storage format.
     return (
       <span
         onClick={() => selfManaged && setFocused(true)}
@@ -322,7 +332,15 @@ function LongTextCell({ value, onChange, editing, onEditingChange }: Omit<CellPr
         )}
         title={str(value)}
       >
-        {str(value) || <span className="text-muted-foreground/40">—</span>}
+        {str(value) ? (
+          rich ? (
+            <Markdown text={str(value)} />
+          ) : (
+            str(value)
+          )
+        ) : (
+          <span className="text-muted-foreground/40">—</span>
+        )}
       </span>
     );
   }
@@ -412,8 +430,13 @@ const SWATCH: Record<string, string> = {
   rose: "bg-rose-100 text-rose-900 dark:bg-rose-900/40 dark:text-rose-100",
   sky: "bg-sky-100 text-sky-900 dark:bg-sky-900/40 dark:text-sky-100",
   lime: "bg-lime-100 text-lime-900 dark:bg-lime-900/40 dark:text-lime-100",
-  orange: "bg-orange-100 text-orange-900 dark:bg-orange-900/40 dark:text-orange-100",
+  // orange/blue/gray are --swamp-* reference scales, which FLIP in dark mode
+  // (100 goes deep, 900 goes pale) — so they need no dark: variants. The other
+  // names are Tailwind's static palette and spell their dark look explicitly.
+  orange: "bg-orange-100 text-orange-900",
   fuchsia: "bg-fuchsia-100 text-fuchsia-900 dark:bg-fuchsia-900/40 dark:text-fuchsia-100",
+  blue: "bg-blue-100 text-blue-900",
+  gray: "bg-gray-100 text-gray-900",
 };
 
 function Pill({ value, color }: { value: string; color?: string }) {

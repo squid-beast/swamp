@@ -14,6 +14,7 @@ import {
 import { cn } from "@/shared/lib/utils";
 import {
   isFilterGroup,
+  isNumericField,
   isTemporalField,
   operatorLabel,
   operatorsFor,
@@ -307,11 +308,27 @@ function LeafEditor({
   const temporal = isTemporalField(field.type);
   const nullary = NULLARY.includes(leaf.op);
 
+  // Field-to-field comparison — "Actual > Forecast". Offered on the comparison
+  // operators for numeric/temporal fields, restricted to the same type family
+  // (the compiler coerces the rhs into the LEFT field's family; a text rhs on a
+  // numeric left would just be NULL, so don't offer it).
+  const comparisonOps = new Set<FilterOp>(["eq", "neq", "gt", "gte", "lt", "lte"]);
+  const numeric = isNumericField(field.type);
+  const sameFamily =
+    comparisonOps.has(leaf.op) && (numeric || temporal)
+      ? fields.filter(
+          (f) =>
+            f.key !== field.key &&
+            (numeric ? isNumericField(f.type) : isTemporalField(f.type))
+        )
+      : [];
+  const byField = !!leaf.valueField;
+
   const subOps = leaf.op === "isWithin" ? WITHIN_SUB_OPS : POINT_SUB_OPS;
-  const showSubOp = temporal && !nullary;
+  const showSubOp = temporal && !nullary && !byField;
   const showN = showSubOp && leaf.subOp && NEEDS_N.has(leaf.subOp);
   const showValue =
-    !nullary && (!temporal || leaf.subOp === "exactDate" || !showSubOp);
+    !nullary && !byField && (!temporal || leaf.subOp === "exactDate" || !showSubOp);
 
   const changeField = (key: string) => {
     const next = fields.find((f) => f.key === key)!;
@@ -374,6 +391,33 @@ function LeafEditor({
           ))}
         </SelectContent>
       </Select>
+
+      {sameFamily.length > 0 && (
+        <Select
+          value={leaf.valueField ?? "__value"}
+          onValueChange={(v) => {
+            if (v === "__value") {
+              const { valueField: _drop, ...rest } = leaf;
+              onChange(rest);
+            } else {
+              // A field rhs replaces the literal AND the date sub-op machinery.
+              onChange({ field: leaf.field, op: leaf.op, valueField: v });
+            }
+          }}
+        >
+          <SelectTrigger className="h-8 w-[8rem] shrink-0 text-[13px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent className="max-h-64">
+            <SelectItem value="__value">a value</SelectItem>
+            {sameFamily.map((f) => (
+              <SelectItem key={f.key} value={f.key}>
+                {f.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
 
       {showSubOp && (
         <Select

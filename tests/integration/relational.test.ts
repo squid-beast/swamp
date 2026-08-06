@@ -552,3 +552,75 @@ describe("swamp_computed_values", () => {
     expect(error).not.toBeNull();
   });
 });
+
+// ─── Phase-2 formula library additions ──────────────────────────────────────
+//
+// One formula field per function, LITERAL args, value asserted. This is the
+// test that catches a TS name with no SQL arm: swamp_field_catalog swallows
+// per-formula exceptions across passes, so a broken arm is a silently-null
+// column — never an error. Assert values, not absence of error.
+
+describe("formula library (NocoDB-parity additions)", () => {
+  const num = (v: number) => ({ t: "num", v });
+  const str = (v: string) => ({ t: "str", v });
+  const bool = (v: boolean) => ({ t: "bool", v });
+  const call = (fn: string, ...args: object[]) => ({ t: "call", fn, args });
+
+  // name → [key, ast, expected]; expected compared after Number() for numerics.
+  const cases: [string, object, unknown][] = [
+    ["fld_p2_switch", call("SWITCH", str("b"), str("a"), num(1), str("b"), num(2), num(99)), 2],
+    ["fld_p2_xor1", call("XOR", bool(true), bool(false)), true],
+    ["fld_p2_xor2", call("XOR", bool(true), bool(true)), false],
+    ["fld_p2_repeat", call("REPEAT", str("ab"), num(3)), "ababab"],
+    ["fld_p2_urlenc", call("URLENCODE", str("a b&c")), "a%20b%26c"],
+    ["fld_p2_rem", call("REGEX_MATCH", str("hello"), str("l+")), true],
+    ["fld_p2_rex", call("REGEX_EXTRACT", str("v1.22.3"), str("[0-9]+")), "1"],
+    ["fld_p2_rer", call("REGEX_REPLACE", str("aaa"), str("a"), str("b")), "bbb"],
+    ["fld_p2_md5", call("MD5", str("abc")), "900150983cd24fb0d6963f7d28e17f72"],
+    ["fld_p2_even", call("EVEN", num(3)), 4],
+    ["fld_p2_evenneg", call("EVEN", num(-1)), -2],
+    ["fld_p2_odd", call("ODD", num(4)), 5],
+    ["fld_p2_rdown", call("ROUNDDOWN", num(1.97), num(1)), 1.9],
+    ["fld_p2_rup", call("ROUNDUP", num(1.01), num(1)), 1.1],
+    ["fld_p2_int", call("INT", num(1.9)), 1],
+    ["fld_p2_value", call("VALUE", str("12.5")), 12.5],
+    ["fld_p2_log10", call("LOG", num(100)), 2],
+    ["fld_p2_log2", call("LOG", num(8), num(2)), 3],
+    ["fld_p2_exp", call("EXP", num(0)), 1],
+    ["fld_p2_arrsort", call("ARRAYSORT", str('["b","a"]')), ["a", "b"]],
+    ["fld_p2_arruniq", call("ARRAYUNIQUE", str('["b","a","b"]')), ["a", "b"]],
+    ["fld_p2_arrcomp", call("ARRAYCOMPACT", str('["a","",null,"b"]')), ["a", "b"]],
+    ["fld_p2_arrslice", call("ARRAYSLICE", str('["a","b","c","d"]'), num(2), num(3)), ["b", "c"]],
+    ["fld_p2_counta", call("COUNTA", str("a"), str(""), str("b")), 2],
+    ["fld_p2_countaarr", call("COUNTA", str('["a","b","c"]')), 3],
+    ["fld_p2_count", call("COUNT", str("x"), num(5), str("7")), 2],
+    ["fld_p2_countall", call("COUNTALL", str(""), str("a")), 2],
+    ["fld_p2_dtdays", call("DATETIME_DIFF", str("2026-01-11"), str("2026-01-01"), str("days")), 10],
+    ["fld_p2_dtmonths", call("DATETIME_DIFF", str("2026-03-15"), str("2026-01-15"), str("months")), 2],
+    ["fld_p2_hour", call("HOUR", str("2026-01-01 13:45:30")), 13],
+    ["fld_p2_minute", call("MINUTE", str("2026-01-01 13:45:30")), 45],
+    ["fld_p2_second", call("SECOND", str("2026-01-01 13:45:30")), 30],
+  ];
+
+  it("computes the documented value for every new function", async () => {
+    for (const [key, ast] of cases) {
+      await makeField(deals, key, key, "formula", { ast });
+    }
+
+    const records = await query(alice.db, deals);
+    const r = records[0];
+
+    for (const [key, , expected] of cases) {
+      const got = r.data[key];
+      if (typeof expected === "number") {
+        expect(Number(got), key).toBe(expected);
+      } else if (typeof expected === "boolean") {
+        expect(got, key).toBe(expected);
+      } else if (Array.isArray(expected)) {
+        expect(got, key).toEqual(expected);
+      } else {
+        expect(got, key).toBe(expected);
+      }
+    }
+  });
+});
