@@ -46,6 +46,10 @@ const PILLARS = [
     title: "Files are private by default",
     body: "Attachments live in private storage. The link to a file is signed at read time and expires. We never store a public URL, because a stored one outlives every permission change you make afterwards. Who can open a file is decided by the same row-level rules as the record it's attached to.",
   },
+  {
+    title: "Locking a field locks it everywhere",
+    body: "Beyond roles, a table can say who may add records, who may delete them, and which fields nobody may edit. That rule is enforced by the database on the way in, not by the screen — so it holds identically whether the change arrives from the grid, the API, a public form, or a script talking to Postgres directly. It can only ever narrow what a role already allows; it can't grant anyone more than their role does.",
+  },
 ];
 
 export default function SecurityPage() {
@@ -93,8 +97,12 @@ export default function SecurityPage() {
           <AlertDescription className="mt-3 text-[14.5px] leading-relaxed">
             SWAMP is in beta, and a security page that lists only strengths is one you
             shouldn&apos;t trust. So, plainly: there is no third-party security audit yet,
-            no SOC 2 or ISO report, and no bug-bounty programme. The REST API has no rate
-            limiting, and the webhook protection stops the common attacks but not a
+            no SOC 2 or ISO report, and no bug-bounty programme. Writes through the API,
+            the ingest endpoint and public forms are rate-limited, but reads are not — and
+            the limiter lets a request through if it can&apos;t reach its own counter, so
+            it slows abuse rather than stopping it. Field locks cover writing, not reading:
+            there is no rule that hides a table or a column from someone who can already
+            open the base. The webhook protection stops the common attacks but not a
             determined DNS-rebinding one. Don&apos;t put data here that would be a
             catastrophe to lose while it&apos;s this young. When any of that changes,
             it&apos;ll be said here first.
