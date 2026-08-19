@@ -78,7 +78,10 @@ export async function GET() {
       status: healthy ? "ok" : "degraded",
       checks: { database, ...(databaseError ? { databaseError } : {}), build, runtime },
       // Which deploy answered. Turns "it's broken" into "it's broken on THIS commit".
-      commit: process.env.VERCEL_GIT_COMMIT_SHA ?? null,
+      // GIT_SHA is the self-hosted equivalent, passed as a Docker build arg.
+      // Without it a container reports null and "which deploy answered" — the
+      // whole point of this field — stops working off Vercel.
+      commit: process.env.VERCEL_GIT_COMMIT_SHA ?? process.env.GIT_SHA ?? null,
       time: new Date().toISOString(),
     },
     {

@@ -14,7 +14,9 @@ import { ImageResponse } from "next/og";
 // duplicated here — Satori renders an <img> data-URI SVG, not a React component,
 // and the OG route already duplicates its own mark the same way.
 
-export const runtime = "edge";
+// nodejs, not edge: next/og ships a Node build, and the edge runtime is the one
+// thing in this repo that a plain container cannot run. Identical output.
+export const runtime = "nodejs";
 
 const BG = "#0b0f0e";
 const ACCENT = "#4ade80";

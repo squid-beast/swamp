@@ -1,0 +1,16 @@
+node_modules
+.next
+.git
+.env
+.env.*
+!.env.example
+tests
+test-results
+playwright-report
+docs
+*.md
+!README.md
+.claude
+supabase/.temp
+supabase/.branches
+tsconfig.tsbuildinfo

@@ -14,7 +14,9 @@ import type { NextRequest } from "next/server";
 // No custom font is loaded: fetching a woff2 on every render is the usual reason
 // these things are slow, and the system stack renders fine at 1200×630.
 
-export const runtime = "edge";
+// nodejs, not edge: next/og ships a Node build, and the edge runtime is the one
+// thing in this repo that a plain container cannot run. Identical output.
+export const runtime = "nodejs";
 
 const BG = "#0b0f0e";
 const FG = "#f2f5f4";

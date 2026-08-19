@@ -1,0 +1,15 @@
+# TLS is automatic: Caddy gets and renews Let's Encrypt certs itself.
+# Replace the hostnames, point DNS at the box, and that is the whole of it.
+
+swampy.app, www.swampy.app {
+	encode zstd gzip
+	reverse_proxy app:3000
+
+	# The app sets its own; these are the ones a proxy is better placed to add.
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+}

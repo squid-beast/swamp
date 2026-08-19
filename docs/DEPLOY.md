@@ -148,13 +148,16 @@ up **seven things, all small**:
 
 | Coupling | Where | Effort to remove |
 |---|---|---|
-| **Cron** | `vercel.json` `crons` | The only real one. Replaced by system cron / a scheduler — see below |
-| `runtime = "edge"` | `app/og/route.tsx`, `app/logo.png/route.tsx` | Change to `nodejs`. `next/og` supports it; these are the only two edge routes |
-| `@vercel/analytics` | `features/marketing/components/consent-analytics.tsx` | Delete the import, or swap for Plausible/Umami |
-| `VERCEL_GIT_COMMIT_SHA` | `app/api/health/route.ts:81` | Pass your own `GIT_SHA` build arg |
-| `VERCEL_PROJECT_PRODUCTION_URL` | `shared/seo/site.ts:19` | Already falls back to `NEXT_PUBLIC_SITE_URL` — just set it |
-| `maxDuration` exports | 11 route files | Inert off-Vercel. Leave them; they document intent |
-| Image optimisation | Next default | Needs `sharp` in the image (one line in the Dockerfile) |
+| **Cron** | `vercel.json` `crons` | ✅ **done** — a per-minute sidecar in `docker-compose.yml` |
+| `runtime = "edge"` | `app/og`, `app/logo.png` | ✅ **done** — both on `nodejs`; verified rendering real PNGs from the standalone server |
+| `@vercel/analytics` | `consent-analytics.tsx` | ✅ **done** — gated on `NEXT_PUBLIC_ANALYTICS=vercel`, inert elsewhere |
+| `VERCEL_GIT_COMMIT_SHA` | `app/api/health/route.ts` | ✅ **done** — falls back to `GIT_SHA` |
+| `VERCEL_PROJECT_PRODUCTION_URL` | `shared/seo/site.ts` | ✅ nothing to do — `NEXT_PUBLIC_SITE_URL` already takes precedence |
+| `maxDuration` exports | 11 route files | Inert off-Vercel. Left in place; they document intent |
+| Image optimisation | Next default | ✅ **done** — `sharp` installed in the runner stage |
+
+**Every code-side item is already applied and on `main`.** What remains is
+infrastructure, and it is in the runbook below.
 
 There is **no** Vercel-specific storage, KV, queue, or middleware API in use.
 The database is Supabase and doesn't care where the app runs. That is why this
@@ -174,137 +177,154 @@ a once-a-day digest is a *Vercel Hobby* limit, not a SWAMP one. On any VPS a
 one-line crontab gives you per-minute dispatch — so moving off Vercel and paying
 for Pro solve the same product problem, and the VPS is cheaper.
 
-## Recipe A — VPS + Docker (keeping hosted Supabase)
+> **Decision taken: VPS + self-hosted Supabase.** The runbook below is that path.
+> The repo already carries what it needs — `Dockerfile`, `docker-compose.yml`,
+> `Caddyfile`, `output: "standalone"`, both image routes moved off the edge
+> runtime, and a per-minute cron sidecar. Verified locally: the standalone server
+> boots and `/og`, `/logo.png` and `/api/health` all answer 200.
 
-The pragmatic middle. Supabase stays managed (auth, storage, backups, RLS all
-unchanged); only the Next.js app moves.
+## The runbook — VPS + self-hosted Supabase
 
-**1. Standalone output.** In `next.config.mjs`:
+### The one trap that will cost you an afternoon
 
-```js
-const nextConfig = {
-  output: "standalone",   // emits .next/standalone with a self-contained server.js
-  async redirects() { /* unchanged */ },
-};
-```
+**`NEXT_PUBLIC_*` is compiled in at BUILD time — including into the server
+bundle — and cannot be overridden at runtime.** Verified, not assumed: a test
+image built with `127.0.0.1:54321` and run with
+`NEXT_PUBLIC_SUPABASE_URL=host.docker.internal` still had the build value
+embedded in `.next/server/**/*.js`, and `/api/health` reported the database
+unreachable while the container could reach it perfectly from a shell.
 
-Harmless on Vercel (ignored), required for a small image.
+Consequences, all of which look like bugs if you don't know this:
 
-**2. Dockerfile** (multi-stage; the runner carries no build tooling):
+* The image is **environment-specific**. Build it with the final public URL —
+  `https://api.yourdomain.com`, the address a *browser* resolves. Rebuild to
+  change it; `docker compose up` with a new env var will not.
+* `docker-compose.yml` therefore passes these as `build.args` **and** the
+  secrets separately via `env_file`. Do not move a `NEXT_PUBLIC_*` into
+  `env_file` and expect it to take.
+* Secrets (`SUPABASE_SERVICE_ROLE_KEY`, `CRON_SECRET`, `RESEND_API_KEY`) go the
+  other way: **runtime only, never build args** — a build arg is readable in the
+  image history by anyone who can pull it.
 
-```dockerfile
-FROM node:20-alpine AS deps
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci
+### 0. What SWAMP actually needs from Supabase
 
-FROM node:20-alpine AS builder
-WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
-COPY . .
-# Build-time public vars must be present — Next inlines NEXT_PUBLIC_* at build.
-ARG NEXT_PUBLIC_SUPABASE_URL
-ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
-ARG NEXT_PUBLIC_SITE_URL
-ARG GIT_SHA
-ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL \
-    NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY \
-    NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL \
-    GIT_SHA=$GIT_SHA
-RUN npm run build
+Worth knowing before you trust the stack: SWAMP targets **stock Postgres**. There
+is nothing proprietary in the 44 migrations — no Supabase-only SQL. What it uses:
 
-FROM node:20-alpine AS runner
-WORKDIR /app
-ENV NODE_ENV=production
-RUN apk add --no-cache sharp || true
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/.next/standalone ./
-COPY --from=builder /app/.next/static ./.next/static
-EXPOSE 3000
-CMD ["node", "server.js"]
-```
+| Component | Used for | If it's missing |
+|---|---|---|
+| **Postgres 15+** with `pgcrypto` | `crypt`/`gen_salt` (share passwords), `gen_random_bytes` (share ids), `digest` | Migrations fail immediately — loud, not silent |
+| **GoTrue** (auth) | `auth.users`, `auth.uid()` — every RLS policy reads it | Nobody can sign in; RLS denies everything |
+| **PostgREST** | The `anon`/`authenticated`/`service_role` roles, `swamp_api_*` RPCs | The whole data layer |
+| **Storage** | Attachments; RLS policies on `storage.objects` | Uploads fail; everything else works |
+| **Realtime** | The `supabase_realtime` publication — live grid edits, notifications | Falls back to no live updates; not fatal |
 
-**3. Compose + TLS.** Caddy terminates HTTPS and renews certs itself:
+`extensions` schema placement matters and is already handled: every function
+touching pgcrypto sets `search_path = public, extensions, pg_temp`, which resolves
+on both the local CLI and a self-hosted stack.
 
-```yaml
-services:
-  app:
-    build:
-      context: .
-      args:
-        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
-        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
-        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL}
-        GIT_SHA: ${GIT_SHA}
-    env_file: .env.production      # server-only secrets, never baked into the image
-    restart: unless-stopped
-  caddy:
-    image: caddy:2
-    ports: ["80:80", "443:443"]
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile
-      - caddy_data:/data
-    restart: unless-stopped
-volumes: { caddy_data: {} }
-```
+### 1. The box
 
-`Caddyfile`:
+2 vCPU / 4 GB minimum — Postgres, GoTrue, PostgREST, Storage, Realtime, Kong,
+the app and Caddy is roughly 2.5 GB resident. Hetzner CX22 or DO 4GB (~$8–12/mo).
+Debian 12 or Ubuntu 24.04, Docker + compose plugin, and a firewall allowing only
+22/80/443.
 
-```
-swampy.app, www.swampy.app {
-  reverse_proxy app:3000
-}
-```
-
-**4. Cron — the part that gets BETTER.** On the host:
+### 2. Supabase, self-hosted
 
 ```bash
-* * * * * curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://swampy.app/api/cron >/dev/null
+git clone --depth 1 https://github.com/supabase/supabase
+cp -r supabase/docker ~/supabase-stack && cd ~/supabase-stack
+cp .env.example .env
 ```
 
-`/api/cron` already accepts GET **and** POST and is gated by `CRON_SECRET`, so
-nothing in the app changes. Per-minute dispatch means webhooks fire in about a
-minute instead of once a day. Note the 60s guard baked into the route ordering
-(dispatch → gc → sync) still applies; on a VPS you could split these into
-separate schedules with different frequencies.
+**Generate every secret** — the defaults in that file are public knowledge:
+`POSTGRES_PASSWORD`, `JWT_SECRET` (≥32 chars), then the `ANON_KEY` and
+`SERVICE_ROLE_KEY` JWTs signed with it (Supabase's self-hosting docs have the
+generator), plus `DASHBOARD_USERNAME`/`DASHBOARD_PASSWORD`.
 
-**5. Code edits** (the seven items above): flip the two `runtime = "edge"` to
-`"nodejs"`, drop `@vercel/analytics`, and read `GIT_SHA` alongside
-`VERCEL_GIT_COMMIT_SHA` in the health route.
+Put Kong behind Caddy on its own hostname — `https://api.yourdomain.com` — and
+**do not expose 5432 publicly.**
 
-**6. Deploy loop.** A GitHub Action on push to `main`:
-`ssh → git pull → docker compose up -d --build` — plus `npx supabase db push`
-BEFORE the app, exactly as on Vercel. **Schema first never stops being the rule.**
+```bash
+docker compose up -d && docker compose ps
+```
 
-## Recipe B — fully self-hosted (Supabase too)
+### 3. Move the data across
 
-Only if you want zero third-party dependency. Supabase publishes a compose stack
-(Postgres + GoTrue + PostgREST + Storage + Realtime + Kong). What you take on:
+You have live data on the hosted project. Three separate things, and the second
+is the one people forget:
 
-- **Backups are yours.** `pg_dump` on a timer, off-box, and *restore-tested* —
-  an untested backup is a hope.
-- **Auth email** needs real SMTP (Resend works) or nobody can reset a password.
-- **Storage** is a volume you must back up alongside the database.
-- **Upgrades** are yours: Postgres majors, GoTrue, PostgREST.
-- **RLS, migrations and every `swamp_*` function are unchanged** — SWAMP targets
-  stock Postgres with pgcrypto, nothing Supabase-proprietary.
+```bash
+# a. Schema + data + the migration ledger, so `db push` knows what's applied.
+pg_dump "$HOSTED_DB_URL"   --schema=public --schema=auth --schema=storage --schema=supabase_migrations   --no-owner --no-privileges -Fc -f swamp.dump
 
-Realistic cost: a 4 GB VPS (~$10–20/mo) and a few hours a month of attention.
+psql "$NEW_DB_URL" -c 'create schema if not exists supabase_migrations;'
+pg_restore -d "$NEW_DB_URL" --no-owner --no-privileges swamp.dump
+```
 
-## Which I'd pick
+**b. `auth.users` carries bcrypt password hashes**, so the dump above preserves
+logins — but only if `JWT_SECRET` differs, which it will: every existing session
+cookie is invalidated and **everyone must sign in again**. Say so before you cut
+over, not after.
 
-**Railway or Fly, not a VPS**, unless you actively want to run servers. You get
-per-minute cron, ~$5–10/mo, and roughly an hour of work — and you keep managed
-Postgres, which is the part you least want to be responsible for at 3am.
+**c. Storage objects are FILES, not rows.** The dump moves the metadata; the
+bytes live in the hosted bucket. Download them (Supabase CLI or the S3-compatible
+endpoint) and drop them into the new stack's storage volume. Skipping this gives
+you records whose attachments 404 — with metadata that insists they exist.
 
-Take the VPS if you want the control or plan to host other things beside it.
-Take Vercel Pro if $20/mo is cheaper than your time this month; it is the only
-option with zero migration.
+### 4. Apply anything newer
 
-## Before you move anything
+```bash
+npx supabase db push --db-url "$NEW_DB_URL"
+```
 
-1. **Back up.** `pg_dump` from Supabase, and download the storage bucket.
-2. **Stand the new host up alongside Vercel** on a subdomain, pointed at the
-   *same* Supabase. Both can serve simultaneously — it's a stateless app.
-3. Run the P1 smoke test above against the new host.
-4. Flip DNS. Keep Vercel deployed for a week; DNS is the rollback.
+The CLI reads `supabase_migrations.schema_migrations`, which came across in the
+dump, so this applies only what the hosted project hadn't seen. Verify with
+`npx supabase migration list --db-url "$NEW_DB_URL"` — every row should pair.
+
+### 5. The app
+
+```bash
+git clone <your repo> ~/swamp && cd ~/swamp
+cp .env.example .env.production && $EDITOR .env.production
+```
+
+Set `NEXT_PUBLIC_SUPABASE_URL=https://api.yourdomain.com` (the **browser-reachable**
+address — it is inlined into the client bundle), the new anon and service-role
+keys, `NEXT_PUBLIC_SITE_URL`, a fresh `CRON_SECRET`, `RESEND_API_KEY`/`EMAIL_FROM`,
+and leave `NEXT_PUBLIC_ANALYTICS` empty.
+
+Edit `Caddyfile` for your hostnames, then:
+
+```bash
+GIT_SHA=$(git rev-parse HEAD) docker compose --env-file .env.production up -d --build
+```
+
+### 6. Auth URLs and SMTP
+
+In the Supabase stack's `.env`: `SITE_URL=https://yourdomain.com`,
+`ADDITIONAL_REDIRECT_URLS` covering `/auth/callback` and `/auth/reset-password`,
+and **SMTP** (`smtp.resend.com:465`, user `resend`, pass = your Resend key).
+Without SMTP, password reset and email confirmation silently do nothing — the
+most common self-host complaint, and it looks like an app bug.
+
+### 7. Backups — now entirely yours
+
+This is the part hosting was doing for you. Nightly, off-box, and **restore-tested**:
+
+```bash
+0 3 * * * pg_dump "$DB_URL" -Fc -f /backup/swamp-$(date +\%F).dump && \
+          find /backup -name 'swamp-*.dump' -mtime +14 -delete
+```
+
+Back up the **storage volume too**, and once — actually restore into a scratch
+database and open the app against it. An untested backup is a hope, not a backup.
+
+### 8. Cutover
+
+Both stacks can serve at once; the app is stateless. Bring the VPS up on a
+subdomain against the new Supabase, run the P1 smoke test above against it, then
+flip DNS. Keep Vercel deployed a week — DNS is the rollback.
+
+

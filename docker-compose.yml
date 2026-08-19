@@ -1,0 +1,65 @@
+# SWAMP — the APP only. Self-hosted Supabase is a separate stack (see
+# docs/DEPLOY.md); this connects to it over the network you put them both on.
+#
+#   docker compose --env-file .env.production up -d --build
+#
+# Kept apart on purpose: Supabase's own compose file is large, versioned by them,
+# and you want to upgrade it independently of the app. Vendoring a copy here is
+# how you end up running a fork of it by accident.
+
+services:
+  app:
+    build:
+      context: .
+      args:
+        # Build-time (inlined into the browser bundle) — see the Dockerfile note.
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:?set in .env.production}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:?set in .env.production}
+        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:?set in .env.production}
+        NEXT_PUBLIC_ANALYTICS: ${NEXT_PUBLIC_ANALYTICS:-}
+        GIT_SHA: ${GIT_SHA:-unknown}
+    # Runtime secrets. NEVER build args — a build arg is readable in the image
+    # history by anyone who can pull it.
+    env_file: .env.production
+    expose: ["3000"]
+    restart: unless-stopped
+    networks: [swamp, supabase]
+
+  caddy:
+    image: caddy:2-alpine
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data      # certificates — losing this re-issues and can hit rate limits
+      - caddy_config:/config
+    depends_on: [app]
+    restart: unless-stopped
+    networks: [swamp]
+
+  # Per-minute cron. THE reason a VPS beats Vercel Hobby for this product:
+  # webhooks fire in ~a minute instead of once a day, with zero code change.
+  cron:
+    image: alpine:3.20
+    env_file: .env.production
+    depends_on: [app]
+    restart: unless-stopped
+    networks: [swamp]
+    command: >
+      sh -c "apk add --no-cache curl >/dev/null &&
+             while true; do
+               curl -fsS -m 55 -H \"Authorization: Bearer $$CRON_SECRET\" http://app:3000/api/cron >/dev/null 2>&1 || true;
+               sleep 60;
+             done"
+
+networks:
+  swamp:
+  # Created by the Supabase stack. `external: true` means compose will refuse to
+  # start until Supabase is actually up, instead of silently making a new empty
+  # network and leaving the app unable to reach its database.
+  supabase:
+    external: true
+    name: supabase_default
+
+volumes:
+  caddy_data:
+  caddy_config:
