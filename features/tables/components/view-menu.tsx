@@ -560,36 +560,100 @@ function ShareDialog({
   view: View;
 }) {
   const router = useRouter();
+  const [loading, setLoading] = React.useState(true);
   const [shareId, setShareId] = React.useState<string | null>(null);
+  const [hasPassword, setHasPassword] = React.useState(false);
   const [password, setPassword] = React.useState("");
   const [allowDownload, setAllowDownload] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
 
-  const url = shareId ? `${window.location.origin}/s/${shareId}` : null;
+  // The dialog used to open in "not shared" state every time, because nothing
+  // ever read the view's current share state — `View` doesn't carry it. So the
+  // primary button said "Create share link" on an ALREADY shared view, and
+  // pressing it minted a new id, silently killing the URL you had sent people.
+  React.useEffect(() => {
+    if (!open) return;
+    let alive = true;
+    setLoading(true);
+    void fetch(`/api/views/${view.id}/share`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((b) => {
+        if (!alive || !b) return;
+        setShareId(b.shareId ?? null);
+        setHasPassword(Boolean(b.hasPassword));
+        setAllowDownload(Boolean(b.allowDownload));
+        setPassword("");
+      })
+      .finally(() => alive && setLoading(false));
+    return () => {
+      alive = false;
+    };
+  }, [open, view.id]);
 
-  const share = async () => {
+  const url = shareId
+    ? `${window.location.origin}/s/${shareId}`
+    : null;
+
+  /** Body for a settings save. `password` is sent ONLY when the field was
+   *  touched, so an untouched field leaves the existing gate alone — and an
+   *  emptied one clears it, which previously had no path at all. */
+  const post = async (body: Record<string, unknown>, failure: string) => {
     setBusy(true);
-
     const res = await fetch(`/api/views/${view.id}/share`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password: password || undefined, allowDownload }),
+      body: JSON.stringify(body),
     });
-
     setBusy(false);
-    if (!res.ok) return toast.error("Could not share the view");
 
-    const body = await res.json();
-    setShareId(body.shareId);
+    if (!res.ok) {
+      toast.error(failure);
+      return null;
+    }
+    return (await res.json()) as { shareId: string };
+  };
+
+  const create = async () => {
+    const b = await post(
+      { password: password || undefined, allowDownload },
+      "Could not share the view"
+    );
+    if (!b) return;
+    setShareId(b.shareId);
+    setHasPassword(Boolean(password));
+    setPassword("");
+    router.refresh();
+  };
+
+  const save = async (next: { password?: string; allowDownload?: boolean }) => {
+    const b = await post(next, "Could not save");
+    if (!b) return;
+    if (next.password !== undefined) {
+      setHasPassword(next.password !== "");
+      setPassword("");
+      toast.success(next.password ? "Password updated" : "Password removed");
+    }
+    router.refresh();
+  };
+
+  const regenerate = async () => {
+    const b = await post({ regenerate: true }, "Could not regenerate the link");
+    if (!b) return;
+    setShareId(b.shareId);
+    // swamp_share_view sets the hash from its argument, and none was sent.
+    setHasPassword(false);
+    toast.success("New link created. The old one now 404s.");
     router.refresh();
   };
 
   const revoke = async () => {
     setBusy(true);
-    await fetch(`/api/views/${view.id}/share`, { method: "DELETE" });
+    const res = await fetch(`/api/views/${view.id}/share`, { method: "DELETE" });
     setBusy(false);
+    if (!res.ok) return toast.error("Could not revoke the link");
 
     setShareId(null);
+    setHasPassword(false);
     setPassword("");
     toast.success("Link revoked. Anyone holding it now gets a 404.");
     router.refresh();
@@ -606,7 +670,11 @@ function ShareDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {url ? (
+        {loading ? (
+          <div className="flex h-24 items-center justify-center text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" />
+          </div>
+        ) : url ? (
           <div className="flex flex-col gap-3">
             <div className="flex gap-2">
               <Input readOnly value={url} className="font-mono text-[12px]" />
@@ -627,6 +695,59 @@ function ShareDialog({
                 fields the form shows.
               </p>
             )}
+
+            {/* Editing these no longer rotates the link. */}
+            <div className="flex flex-col gap-1.5 border-t pt-3">
+              <Label className="text-[12px] text-muted-foreground">
+                {hasPassword ? "Password — set" : "Password — none"}
+              </Label>
+              <div className="flex gap-2">
+                <Input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder={hasPassword ? "Enter a new one to replace it" : "Add a password"}
+                />
+                <Button
+                  variant="outline"
+                  disabled={busy || !password}
+                  onClick={() => save({ password })}
+                >
+                  Set
+                </Button>
+              </div>
+              {hasPassword && (
+                <Button
+                  variant="ghost"
+                  className="h-7 self-start px-1 text-[12px] text-muted-foreground"
+                  disabled={busy}
+                  onClick={() => save({ password: "" })}
+                >
+                  Remove password — the link keeps working
+                </Button>
+              )}
+            </div>
+
+            <label className="flex cursor-pointer items-center gap-2 text-[13px]">
+              <Checkbox
+                checked={allowDownload}
+                disabled={busy}
+                onCheckedChange={(v) => {
+                  setAllowDownload(!!v);
+                  void save({ allowDownload: !!v });
+                }}
+              />
+              Allow visitors to download a CSV
+            </label>
+
+            <div className="flex flex-col gap-1 border-t pt-3">
+              <Button variant="outline" onClick={regenerate} disabled={busy}>
+                Regenerate link
+              </Button>
+              <p className="text-[11px] text-muted-foreground">
+                Makes a new URL and clears any password. The current link stops working.
+              </p>
+            </div>
 
             <Button variant="ghost" className="text-destructive" onClick={revoke} disabled={busy}>
               Revoke link
@@ -659,7 +780,7 @@ function ShareDialog({
               Allow visitors to download a CSV
             </label>
 
-            <Button onClick={share} disabled={busy} className={cn(busy && "opacity-70")}>
+            <Button onClick={create} disabled={busy} className={cn(busy && "opacity-70")}>
               {busy ? "Creating…" : "Create share link"}
             </Button>
           </div>

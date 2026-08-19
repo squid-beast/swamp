@@ -13,7 +13,11 @@ import { shareView, unshareView } from "@/features/tables/sharing";
 export const dynamic = "force-dynamic";
 
 const schema = z.object({
+  /** Present = change the gate. "" clears it. Absent = leave it alone. */
   password: z.string().max(200).optional(),
+  /** Explicitly mint a NEW share id, invalidating the current link. Rotation is
+   *  a decision, never a side effect of editing a setting. */
+  regenerate: z.boolean().optional(),
   allowDownload: z.boolean().optional(),
   /** Vanity alias for the link. GUESSABLE BY CONSTRUCTION — the random share id
    *  is the security property, and a slug trades it away; pair with a password
@@ -29,6 +33,33 @@ const schema = z.object({
  *  only real collision (`/s/b/…`, the shared-base landing) unreachable. These
  *  are the words a future route is most likely to want. */
 const RESERVED_SLUGS = new Set(["api", "app", "auth", "new", "admin", "static", "public"]);
+
+// The dialog had no way to read this, so it opened in "not shared" state every
+// time — and its Create button rotated the link you had already sent people.
+export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+  const denied = await requireAuth();
+  if (denied) return denied;
+
+  const { data, error } = await createClient()
+    .from("views")
+    .select("share_id, share_slug, share_password_hash, share_options")
+    .eq("id", params.id)
+    .maybeSingle();
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 403 });
+  if (!data) return NextResponse.json({ error: "not found" }, { status: 404 });
+
+  const options = (data.share_options as { allowDownload?: boolean } | null) ?? {};
+
+  return NextResponse.json({
+    shareId: data.share_id,
+    slug: data.share_slug,
+    // A BOOLEAN, never the hash. Whether a gate exists is a setting the owner
+    // needs to see; the gate itself is a bcrypt hash and stays in Postgres.
+    hasPassword: Boolean(data.share_password_hash),
+    allowDownload: Boolean(options.allowDownload),
+  });
+}
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const denied = await requireAuth();
@@ -50,17 +81,11 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   try {
     const db = createClient();
 
-    // ── Why this is not an unconditional shareView() ──
-    //
     // swamp_share_view ALWAYS mints a fresh share_id and sets the password hash
     // from its argument — passing null CLEARS an existing password. Calling it on
     // every POST meant `{"slug":"pricing"}` (no password key) silently rotated the
-    // link AND unprotected a password-gated share. So (re)share only when the
-    // caller actually asked to:
-    //
-    //   · `password` present  → explicit (re)share: rotate the id, set/clear the gate.
-    //   · not yet shared      → first share.
-    //   · otherwise           → this is a settings edit; leave the link alone.
+    // link AND unprotected a password-gated share. The current state decides what
+    // this request means; see the three intents below.
     const { data: existing } = await db
       .from("views")
       .select("share_id, share_options")
@@ -77,11 +102,31 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       if (error) return NextResponse.json({ error: "that slug is taken" }, { status: 409 });
     }
 
-    const wantsReshare = parsed.data.password !== undefined || !existing?.share_id;
+    // Three distinct intents, and only the first two touch the link:
+    //
+    //   · not shared yet          → mint (and set the gate if one was sent)
+    //   · regenerate: true        → mint a NEW id, invalidating the old link
+    //   · already shared          → edit settings in place. A password sent here
+    //                               changes the gate WITHOUT rotating, which is
+    //                               the operation that previously had no path:
+    //                               swamp_share_view always re-mints.
+    const firstShare = !existing?.share_id;
+    const rotate = firstShare || parsed.data.regenerate === true;
 
-    const shareId = wantsReshare
-      ? await shareView(params.id, parsed.data.password)
-      : (existing!.share_id as string);
+    let shareId: string;
+    if (rotate) {
+      shareId = await shareView(params.id, parsed.data.password);
+    } else {
+      shareId = existing!.share_id as string;
+
+      if (parsed.data.password !== undefined) {
+        const { error } = await db.rpc("swamp_set_share_password", {
+          p_view_id: params.id,
+          p_password: parsed.data.password || null,
+        });
+        if (error) return NextResponse.json({ error: error.message }, { status: 403 });
+      }
+    }
 
     if (parsed.data.allowDownload !== undefined) {
       // MERGE, don't replace: share_options also carries `embed`, and a

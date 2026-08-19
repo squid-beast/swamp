@@ -700,3 +700,69 @@ describe("shared base", () => {
     expect(data!.share_id).toBeNull();
   });
 });
+
+// ─── Editing a share without rotating its link ──────────────────────────────
+
+describe("swamp_set_share_password", () => {
+  it("changes the gate and leaves the link alone", async () => {
+    const id = must(
+      await alice.db.rpc("swamp_share_view", { p_view_id: gridViewId, p_password: null })
+    ) as string;
+
+    // Add a password to an EXISTING share. Previously the only route to this was
+    // swamp_share_view, which always mints a new id — so protecting a link meant
+    // breaking every copy of it already sent out.
+    must(
+      await alice.db.rpc("swamp_set_share_password", {
+        p_view_id: gridViewId, p_password: "hunter2",
+      })
+    );
+
+    const { data: after } = await alice.db
+      .from("views").select("share_id").eq("id", gridViewId).single();
+    expect(after!.share_id).toBe(id);            // same link
+
+    const wrong = await anon.rpc("swamp_shared_meta", { p_share_id: id, p_password: null });
+    expect(wrong.error).not.toBeNull();          // gate is up
+    const right = await anon.rpc("swamp_shared_meta", { p_share_id: id, p_password: "hunter2" });
+    expect(right.error).toBeNull();
+  });
+
+  it("clears the gate — the operation that had no path at all", async () => {
+    const id = must(
+      await alice.db.rpc("swamp_share_view", { p_view_id: gridViewId, p_password: "temp" })
+    ) as string;
+
+    must(await alice.db.rpc("swamp_set_share_password", { p_view_id: gridViewId, p_password: null }));
+
+    const open = await anon.rpc("swamp_shared_meta", { p_share_id: id, p_password: null });
+    expect(open.error).toBeNull();
+
+    const { data } = await alice.db
+      .from("views").select("share_id").eq("id", gridViewId).single();
+    expect(data!.share_id).toBe(id);             // still the same link
+  });
+
+  it("refuses on a view that is not shared, rather than silently doing nothing", async () => {
+    must(await alice.db.rpc("swamp_unshare_view", { p_view_id: gridViewId }));
+    const { error } = await alice.db.rpc("swamp_set_share_password", {
+      p_view_id: gridViewId, p_password: "x",
+    });
+    expect(error).not.toBeNull();
+
+    must(await alice.db.rpc("swamp_share_view", { p_view_id: gridViewId, p_password: null }));
+  });
+
+  it("a stranger cannot change someone else's share password", async () => {
+    must(await alice.db.rpc("swamp_share_view", { p_view_id: gridViewId, p_password: null }));
+    const mallory = await createUser();
+    try {
+      const { error } = await mallory.db.rpc("swamp_set_share_password", {
+        p_view_id: gridViewId, p_password: "mine-now",
+      });
+      expect(error).not.toBeNull();
+    } finally {
+      await deleteUser(mallory);
+    }
+  });
+});
