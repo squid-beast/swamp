@@ -43,3 +43,7 @@ Live product: swampy.app. Docs that exist: `docs/GUIDE.md` (product/API) and `do
 ## When unsure
 
 Read `docs/GUIDE.md` and the nearest existing feature file. Prefer the smallest change that matches production patterns already in the repo.
+
+
+## MANDATORY: Ekoham Product Standards
+Before any deploy/launch, apply and TEST every item in ~/leos-brain/areas/product-standards.md (Security-20 with per-item test results, Launch-20, Anti-vibecoded-30). Any gate failure = no deploy.
