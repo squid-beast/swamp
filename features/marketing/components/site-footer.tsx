@@ -67,7 +67,17 @@ export function SiteFooter() {
 
       <div className="border-t">
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-2 px-4 py-6 text-[12.5px] text-muted-foreground sm:flex-row">
-          <span>© {year} SWAMP</span>
+          <span className="text-center">
+            © {year} SWAMP · A{" "}
+            <a
+              href="https://paypilotlabs.com/"
+              rel="noopener"
+              className="text-foreground/70 transition-colors hover:text-foreground"
+            >
+              PayPilotLabs
+            </a>{" "}
+            product
+          </span>
           <div className="flex items-center gap-4">
             <CookieSettingsButton className="transition-colors hover:text-foreground" />
             <span>Built in the open by Squid-Beast.</span>

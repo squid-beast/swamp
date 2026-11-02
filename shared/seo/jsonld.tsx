@@ -40,6 +40,7 @@ export const organizationSchema = () => ({
   description: SITE.description,
   email: SITE.email,
   founder: { "@id": `${SITE.url}/#founder` },
+  parentOrganization: { "@type": "Organization", name: "PayPilotLabs", url: "https://paypilotlabs.com/" },
   sameAs: [SITE.github],
 });
 
